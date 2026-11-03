@@ -2,16 +2,16 @@
   "format": 1,
   "title": "Conflux 官方扩展全集（镜像）",
   "description": "ConfluxOne/ExtensionSamples 全部扩展现已收录，包体直连官方仓库，目录与版本号每日自动跟随官方更新。",
-  "updated": "2026-11-03T22:39:13Z",
+  "updated": "2026-11-01T00:00:00Z",
   "packages": [
     {
       "id": "conflux.bangumi",
       "title": "Bangumi 番组计划",
       "description": "每日放送、季度新番、排行榜、番剧搜索与详情（数据来自 bgm.tv）",
       "author": "Jian Liu",
-      "version": "1.0.1",
+      "version": "0.9.0",
       "engine": 1,
-      "changelog": "",
+      "changelog": "（故意写旧，验证自动纠正）",
       "types": [
         "widget",
         "search",
