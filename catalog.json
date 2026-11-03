@@ -1,0 +1,43 @@
+{
+  "format": 1,
+  "title": "Minis 自建扩展源",
+  "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
+  "updated": "2026-11-03T16:54:57Z",
+  "packages": [
+    {
+      "id": "conflux.huangguo",
+      "title": "黄果短剧",
+      "version": "3.3.6",
+      "engine": 1,
+      "types": [
+        "widget",
+        "search",
+        "list",
+        "detail",
+        "playback"
+      ],
+      "url": "https://maxbo718.github.io/conflux-subscribe/packages/huangguo.js",
+      "description": "提供黄果 AI 短剧、漫剧、换脸与魔改视频浏览、搜索、选集与全集流畅播放",
+      "author": "Conflux Community",
+      "icon": "https://huangguoai.com/apple-touch-icon.png",
+      "changelog": "3.3.6：列表页导航栏加搜索入口（跟随官方 list.search 规范）；3.3.5：新增扩展源图标"
+    },
+    {
+      "id": "conflux.guazi",
+      "title": "瓜子影视",
+      "version": "1.2.6",
+      "engine": 1,
+      "types": [
+        "widget",
+        "search",
+        "list",
+        "detail",
+        "playback"
+      ],
+      "url": "https://maxbo718.github.io/conflux-subscribe/packages/guazi.js",
+      "description": "15 个独立榜单 + 全站播放：周榜、流媒体新片、搜索、详情、选集与直连播放",
+      "icon": "https://guazi.113210833.xyz/icon.png",
+      "changelog": "1.2.6：修复 HTTP 状态码判定——ctx.http 返回 status 而非 ok，此前 429/500/404 被当作成功只显示占位数据；错误码改用协议标准值并带 retryable；1.2.5：列表页导航栏加搜索入口"
+    }
+  ]
+}
