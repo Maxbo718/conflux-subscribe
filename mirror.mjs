@@ -32,8 +32,8 @@ function parsePkg(src) {
   };
   try {
     vm.runInNewContext(src, sandbox, { timeout: 8000 });
-  } catch {
-    return null;
+  } catch (e) {
+    throw new Error("执行 definePackage 失败：" + e.message);
   }
   if (!pkg || !pkg.id || !pkg.version) return null;
   const types = [...new Set((pkg.extensions || []).map((e) => e.type).filter(Boolean))];
@@ -52,6 +52,8 @@ function parsePkg(src) {
 }
 
 const vnum = (v) => String(v).split("-")[0].split(".").map((n) => parseInt(n, 10) || 0);
+const warnings = [];
+const warn = (m) => { warnings.push(m); console.log(m); };
 function newer(a, b) {
   const x = vnum(a), y = vnum(b);
   for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
@@ -76,8 +78,17 @@ for (const p of js) {
     continue;
   }
   if (!src.includes("definePackage")) continue;
-  const meta = parsePkg(src);
-  if (!meta) continue;
+  let meta;
+  try {
+    meta = parsePkg(src);
+  } catch (e) {
+    warn(`⚠ ${p} 解析失败，已跳过：${e.message}`);
+    continue;
+  }
+  if (!meta) {
+    warn(`⚠ ${p} 含 definePackage 但没解析出 id/version，已跳过（请检查包格式）`);
+    continue;
+  }
   meta.url = `${RAW}/${p}`;
   meta._raw = p;
   const prev = best.get(meta.id);
@@ -104,6 +115,40 @@ const out = {
   packages,
 };
 
+// 防呆：新结果比现有目录少太多时，判定为解析异常而非官方真的下架，保留原文件
+function readExisting(file) {
+  try {
+    const d = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Array.isArray(d.packages) ? d.packages : [];
+  } catch {
+    return null;
+  }
+}
+const prevPkgs = readExisting(OUT);
+if (prevPkgs && prevPkgs.length >= 4) {
+  const prevIds = new Set(prevPkgs.map((p) => p.id));
+  const nowIds = new Set(packages.map((p) => p.id));
+  const missing = [...prevIds].filter((i) => !nowIds.has(i));
+  const ratio = packages.length / prevPkgs.length;
+  if (ratio < 0.7) {
+    console.error(
+      `\n✗ 拒绝写入：新目录只有 ${packages.length} 个包，原目录 ${prevPkgs.length} 个（丢失 ${missing.join(", ")}）\n` +
+        `  这通常是解析失败或官方仓库结构变动导致，保留原文件不动。`
+    );
+    if (warnings.length) for (const w of warnings) console.error("  " + w);
+    process.exit(2);
+  }
+  if (missing.length) {
+    warn(`注意：${missing.length} 个包在这次结果里消失（${missing.join(", ")}），若确为官方下架可忽略`);
+  }
+}
+
 fs.writeFileSync(OUT, JSON.stringify(out, null, 2) + "\n");
 console.log(`\n生成 ${OUT}：${packages.length} 个包`);
 for (const p of packages) console.log(`  ${p.id.padEnd(26)} ${p.version.padEnd(8)} ${p.types.join(",")}`);
+
+if (warnings.length) {
+  // 在 GitHub Actions 日志里高亮成 warning，不要静默吞掉
+  console.log(`\n::warning::镜像有 ${warnings.length} 条告警，可能有扩展未被收录`);
+  for (const w of warnings) console.log("::warning::" + w.replace(/\n/g, " "));
+}
