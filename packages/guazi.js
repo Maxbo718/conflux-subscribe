@@ -7,7 +7,7 @@
  *   /play/{vurlId}         播放页（内含 data-hls 直链）
  * 协议层由「瓜子榜单」组件原样拼接，加密/鉴权/域名轮换逻辑零重写。
  */
-var VERSION = "1.2.6";
+var VERSION = "1.2.7";
 
 var API_BASE = "https://guazi.113210833.xyz";
 /* HLS 规范化代理：给清单补 .m3u8、分片补 .ts、带 3 次重试与显式 Content-Length */
@@ -1006,7 +1006,7 @@ definePackage({
         }
 
         var res = await ctx.http.get(baseUrl(ctx) + "/play/" + vurlId, { timeout: 25000 });
-        if (!res || res.ok === false) return [];
+        check(res);
         var html = typeof res.data === "string" ? res.data : "";
         if (!html && res.data && typeof res.data.text === "string") html = res.data.text;
         var m = html.match(/data-hls="([^"]+)"/);
