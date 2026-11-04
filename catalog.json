@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-04T08:02:53Z",
+  "updated": "2026-11-04T08:03:26Z",
   "packages": [
     {
       "id": "conflux.guazi",
