@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.12";
+var YSP_VERSION = "1.1.0";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -11,11 +11,13 @@ definePackage({
   site: "https://www.yangshipin.cn/",
   version: YSP_VERSION,
   engine: 1,
-  // 取流要过 player-api 鉴权 + h5access 匿名签名；播放地址落在 live-* CDN
-  // 边缘节点（host 按运营商调度变化，如 live-dtocnc-cdn.ysp.cctv.cn），
-  // 这里用 live- 前缀放行，探活（ctx.http）才不会被权限拦住。
+  // 取流：auth/get_live_info 经 Worker 代理转发（Conflux ctx.http.post 无法正确发送 body，
+  // 三参签名抛异常、两参丢 body，App 实测 v1.0.10~v1.0.12）；token 直连 h5access（GET）；
+  // 播放地址落在 live-* CDN 边缘节点。默认代理是 Cloudflare（海外出口），体育频道有
+  // 地域版权限制时可在包设置里换国内出口代理。
   permissions: {
     network: [
+      "https://yspproxy.113210833.xyz",
       "https://player-api.yangshipin.cn",
       "https://h5access.yangshipin.cn",
       "https://www.yangshipin.cn",
@@ -24,6 +26,16 @@ definePackage({
       "https://live-",
     ],
   },
+  settings: [
+    {
+      name: "proxyBase",
+      title: "取流代理地址",
+      description:
+        "auth/get_live_info 经此代理转发（App 无法直接发 POST body）。默认 Cloudflare 海外出口，体育频道可能提示「版权原因」；换国内出口代理可解除。",
+      type: "text",
+      default: "https://yspproxy.113210833.xyz",
+    },
+  ],
   extensions: [
     {
       type: "widget",
@@ -106,6 +118,12 @@ definePackage({
 var YSP_HOST = "https://www.yangshipin.cn";
 var YSP_BASE = "https://player-api.yangshipin.cn/v1/player/";
 var YSP_APPID = "519748109";
+// Conflux ctx.http.post 无法可靠发送 body（三参签名抛异常，两参丢 body）。
+// 两个 POST 端点（auth / get_live_info）改走 Cloudflare Worker 代理：
+// Conflux 发 GET（参数在 query），Worker 用 POST + 正确 Content-Type 转发。
+var YSP_PROXY = "https://yspproxy.113210833.xyz";
+// 与 Worker 端 KEY 配对（防第三方白嫖代理刷央视频 token）
+var YSP_PROXY_KEY = "6e6ead77a1aed55f5ab79eaf08dbed08";
 var YSP_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 
@@ -5929,8 +5947,10 @@ function yspExtError(message, code, retryable) {
 function yspJoin(base,ref){var m=/^(https?):\/\/([^\/]+)([^?#]*)/.exec(String(base));if(!m)throw Error("无效直播地址");ref=String(ref||"").trim();if(/^https?:\/\//i.test(ref))return ref;if(ref.indexOf("//")===0)return m[1]+":"+ref;if(ref.charAt(0)==="?")return m[1]+"://"+m[2]+(m[3]||"/")+ref;var raw=ref.charAt(0)==="/"?ref:(m[3]||"/").replace(/[^\/]*$/,"")+ref;var q=raw.search(/[?#]/),suffix=q<0?"":raw.slice(q),parts=(q<0?raw:raw.slice(0,q)).split("/"),out=[];for(var i=0;i<parts.length;i++){if(parts[i]===".."){if(out.length)out.pop();}else if(parts[i]&&parts[i]!==".")out.push(parts[i]);}return m[1]+"://"+m[2]+"/"+out.join("/")+suffix;}
 function yspHttpOK(r){var s=r.statusCode||r.status||200;if(s<200||s>=300)throw Error("直播媒体 HTTP "+s);}
 
-// ---------- 直连央视频取流（已砍掉原组件的私人甲骨文中转）----------
-// ctx.http.post(url, options)：body 放 options（参考官方 hongguo.js）。
+// ---------- 直连央视频取流（auth/get_live_info 走 Worker 代理）----------
+// Conflux ctx.http.post 无法可靠发送 body（三参签名抛异常、两参丢 body，App 实测）。
+// 改为把 POST 参数转成 GET query 发到 Cloudflare Worker，Worker 用 POST + 正确
+// Content-Type 转发到央视频。Worker 只做转发，签名/加密全部在包内完成。
 async function yspHttpGet(ctx, url, headers, label) {
   var response = null;
   try {
@@ -5947,30 +5967,39 @@ async function yspHttpGet(ctx, url, headers, label) {
   return response.data;
 }
 
-// 央视频两个 POST 端点用不同 Content-Type：auth 表单、get_live_info JSON。
-// 用文档指定的三参签名 ctx.http.post(url, body, options?)。
-// body 预序列化为字符串：form 端点用 encodeURIComponent 拼，json 端点用 JSON.stringify。
-async function yspHttpPost(ctx, url, body, headers, label, encode) {
+// POST 参数 → Worker 代理：Conflux 端发 GET，参数全部放 query。
+// encode: "form" → 参数逐个放 query，Worker 用 application/x-www-form-urlencoded 转发（auth）；
+//         "json" → 整个 JSON body 作为单个 json= 参数传（保留数字/字符串类型，GET query 会把
+//                  逐个参数都变成字符串，上游 get_live_info 对类型敏感会返回"获取直播信息失败"），
+//                  Worker 原样转发，customHeaders 以 h_ 前缀附加。
+async function yspProxyPost(ctx, endpoint, body, label, encode, customHeaders) {
+  var parts = [];
+  if (encode === "json") {
+    var jsonStr = body && typeof body === "object" ? JSON.stringify(body) : String(body);
+    parts.push("json=" + encodeURIComponent(jsonStr));
+    if (customHeaders) {
+      var hks = Object.keys(customHeaders);
+      for (var j = 0; j < hks.length; j++) {
+        parts.push("h_" + encodeURIComponent(hks[j]) + "=" + encodeURIComponent(String(customHeaders[hks[j]])));
+      }
+    }
+  } else {
+    var params = body && typeof body === "object" ? body : {};
+    var keys = Object.keys(params);
+    for (var i = 0; i < keys.length; i++) {
+      parts.push(encodeURIComponent(keys[i]) + "=" + encodeURIComponent(String(params[keys[i]])));
+    }
+  }
+  var base = YSP_PROXY;
+  try {
+    if (ctx && ctx.settings && typeof ctx.settings.proxyBase === "string" && /^https:\/\//.test(ctx.settings.proxyBase.trim())) {
+      base = ctx.settings.proxyBase.trim().replace(/\/+$/, "");
+    }
+  } catch (e) {}
+  var url = base + endpoint + "?" + (parts.length ? parts.join("&") + "&" : "") + "k=" + YSP_PROXY_KEY;
   var response = null;
   try {
-    var bodyStr;
-    var ct;
-    if (encode === "json") {
-      bodyStr = body && typeof body === "object" ? JSON.stringify(body) : String(body);
-      ct = "application/json;charset=UTF-8";
-    } else {
-      bodyStr =
-        body && typeof body === "object"
-          ? Object.keys(body)
-              .map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(String(body[k])); })
-              .join("&")
-          : String(body);
-      ct = "application/x-www-form-urlencoded;charset=UTF-8";
-    }
-    response = await ctx.http.post(url, bodyStr, {
-      headers: Object.assign({ "Content-Type": ct }, headers || {}),
-      timeoutMs: 15000,
-    });
+    response = await ctx.http.get(url, { timeoutMs: 15000 });
   } catch (error) {
     yspExtError(label + " 网络请求失败：" + (error && error.message ? error.message : error), "unavailable", true);
   }
@@ -6055,7 +6084,8 @@ async function yspResolveChannel(ctx, ch) {
     ts: state.ts,
     rnd: YspKeygen.rnd(state),
   };
-  var auth = yspPayload(await yspHttpPost(ctx, YSP_BASE + "auth", a, headers, "直播鉴权"), "直播鉴权");
+  // auth：原为 POST form body，现走 Worker 代理（GET query → Worker POST form）
+  var auth = yspPayload(await yspProxyPost(ctx, "/auth", a, "直播鉴权", "form"), "直播鉴权");
   if (!auth.token || !auth.ts) yspExtError("直播鉴权缺少凭据", "parse_failed", false);
   var open = yspPayload(await yspHttpGet(ctx, "https://h5access.yangshipin.cn/web/open/token?" + yspQuery(openParams, true), headers, "匿名签名凭据"), "匿名签名凭据");
   if (!open.token) yspExtError("匿名签名凭据为空", "parse_failed", false);
@@ -6065,18 +6095,22 @@ async function yspResolveChannel(ctx, ch) {
   var composite = input + "-" + guid + "-1-" + requestid;
   state.token = open.token;
   state.input = composite;
-  var ph = Object.assign({}, headers, {
-    "yspsdkinput": input,
-    "yspsdksign": YspKeygen.sign(state) + "-" + composite,
-    "seqId": "1",
-    "request-id": requestid,
-    "yspPlayerToken": auth.token,
-    "yspticket": yspTicket(ch.pid, String(auth.ts), guid),
-  });
   params.rand_str = yspRandom(10);
   params.signature = yspSign(params, "0f$IVHi9Qno?G");
 
-  var info = yspPayload(await yspHttpPost(ctx, YSP_BASE + "get_live_info", params, ph, "直播取流", "json"), "直播取流");
+  // get_live_info：原为 POST JSON body + 自定义 headers，现走 Worker 代理
+  // （GET query → Worker POST JSON + h_ 前缀还原 headers）
+  var info = yspPayload(
+    await yspProxyPost(ctx, "/get_live_info", params, "直播取流", "json", {
+      "yspsdkinput": input,
+      "yspsdksign": YspKeygen.sign(state) + "-" + composite,
+      "seqId": "1",
+      "request-id": requestid,
+      "yspPlayerToken": auth.token,
+      "yspticket": yspTicket(ch.pid, String(auth.ts), guid),
+    }),
+    "直播取流"
+  );
   if (Number(info.iretcode) !== 0) yspExtError("频道不可用：" + (info.errinfo || info.iretcode), "not_found", false);
   if (info.chanll) yspExtError("该频道需要网页专用播放校验，未返回未经验证的线路", "not_found", false);
   if (!/^https?:\/\//i.test(String(info.playurl || ""))) yspExtError("直播接口未返回有效地址", "parse_failed", false);
