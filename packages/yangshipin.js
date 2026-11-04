@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.6";
+var YSP_VERSION = "1.0.7";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -19,6 +19,8 @@ definePackage({
       "https://player-api.yangshipin.cn",
       "https://h5access.yangshipin.cn",
       "https://www.yangshipin.cn",
+      "https://hlsliveali-cdn.ysp.cctv.cn",
+      "https://live-dtocnc-cdn.ysp.cctv.cn",
       "https://live-",
     ],
   },
@@ -5949,9 +5951,10 @@ async function yspHttpPost(ctx, url, body, headers, label, encode) {
   var response = null;
   try {
     if (encode === "json") {
+      var jsonBody = body && typeof body === "object" ? JSON.stringify(body) : String(body);
       response = await ctx.http.post(url, {
         headers: Object.assign({ "Content-Type": "application/json;charset=UTF-8" }, headers || {}),
-        body: body,
+        body: jsonBody,
         timeoutMs: 15000,
       });
     } else {
