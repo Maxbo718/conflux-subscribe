@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.7";
+var YSP_VERSION = "1.0.9";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -5946,33 +5946,29 @@ async function yspHttpGet(ctx, url, headers, label) {
   return response.data;
 }
 
-// encode："form"（默认）把对象转 urlencoded 串，用于 /auth；"json" 直接传对象，由运行时 JSON 序列化，用于 get_live_info
+// 央视频两个 POST 端点用不同 Content-Type：auth 表单、get_live_info JSON。
+// 用 bangumi 标准签名 ctx.http.post(url, bodyString, {headers})，body 预先序列化为字符串。
 async function yspHttpPost(ctx, url, body, headers, label, encode) {
   var response = null;
   try {
+    var bodyStr;
+    var ct;
     if (encode === "json") {
-      var jsonBody = body && typeof body === "object" ? JSON.stringify(body) : String(body);
-      response = await ctx.http.post(url, {
-        headers: Object.assign({ "Content-Type": "application/json;charset=UTF-8" }, headers || {}),
-        body: jsonBody,
-        timeoutMs: 15000,
-      });
+      bodyStr = body && typeof body === "object" ? JSON.stringify(body) : String(body);
+      ct = "application/json;charset=UTF-8";
     } else {
-      var formBody =
+      bodyStr =
         body && typeof body === "object"
           ? Object.keys(body)
               .map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(String(body[k])); })
               .join("&")
           : String(body);
-      response = await ctx.http.post(url, {
-        headers: Object.assign(
-          { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-          headers || {}
-        ),
-        body: formBody,
-        timeoutMs: 15000,
-      });
+      ct = "application/x-www-form-urlencoded;charset=UTF-8";
     }
+    response = await ctx.http.post(url, bodyStr, {
+      headers: Object.assign({ "Content-Type": ct }, headers || {}),
+      timeoutMs: 15000,
+    });
   } catch (error) {
     yspExtError(label + " 网络请求失败：" + (error && error.message ? error.message : error), "unavailable", true);
   }
@@ -6157,8 +6153,7 @@ async function yspFetchPlayback(ctx, pid, cnlid) {
     if (YSP_CHANNELS[i].pid === String(pid)) { ch = YSP_CHANNELS[i]; break; }
   }
   if (!ch) yspExtError("未找到频道：" + pid, "not_found", false);
-  var source = await yspResolveChannel(ctx, ch);
-  return await yspProbe(ctx, source);
+  return await yspResolveChannel(ctx, ch);
 }
 
 function yspGroupTitle(ch) {
@@ -6253,13 +6248,8 @@ async function yspPlaybackSources(ctx, input) {
     if (YSP_CHANNELS[i].pid === pid || pid.indexOf(YSP_CHANNELS[i].pid + ":") === 0) { ch = YSP_CHANNELS[i]; break; }
   }
   if (!ch) return [];
-  var r;
-  try {
-    r = await yspFetchPlayback(ctx, ch.pid, ch.cnlid);
-  } catch (e) {
-    console.log("[yangshipin] playback resolve failed: " + (e && e.message ? e.message : e));
-    return [];
-  }
+  // 不吞错误——让 ExtensionError 传播给 App，用户能看到真正的失败原因
+  var r = await yspFetchPlayback(ctx, ch.pid, ch.cnlid);
   var headers = { "User-Agent": YSP_UA, Referer: YSP_HOST + "/" };
   return [
     {
