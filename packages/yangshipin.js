@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.10";
+var YSP_VERSION = "1.0.11";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -5948,7 +5948,7 @@ async function yspHttpGet(ctx, url, headers, label) {
 }
 
 // 央视频两个 POST 端点用不同 Content-Type：auth 表单、get_live_info JSON。
-// 用 bangumi 标准签名 ctx.http.post(url, bodyString, {headers})，body 预先序列化为字符串。
+// 用两参签名 ctx.http.post(url, {headers, body})，body 放在 options 里（参考官方 ddys.js / hongguo.js）。
 async function yspHttpPost(ctx, url, body, headers, label, encode) {
   var response = null;
   try {
@@ -5966,8 +5966,9 @@ async function yspHttpPost(ctx, url, body, headers, label, encode) {
           : String(body);
       ct = "application/x-www-form-urlencoded;charset=UTF-8";
     }
-    response = await ctx.http.post(url, bodyStr, {
+    response = await ctx.http.post(url, {
       headers: Object.assign({ "Content-Type": ct }, headers || {}),
+      body: bodyStr,
       timeoutMs: 15000,
     });
   } catch (error) {
