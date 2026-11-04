@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.2.1";
+var YSP_VERSION = "1.2.2";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -6149,7 +6149,7 @@ async function yspResolveChannel(ctx, ch) {
       origin = ctx.settings.proxyBase.trim().replace(/\/+$/, "");
     }
   } catch (e) {}
-  var relayUrl = origin + "/live/m3u8?k=" + YSP_PROXY_KEY + "&u=" + yspB64Url(playUrl);
+  var relayUrl = origin + "/live/" + yspB64Url(playUrl) + ".m3u8?k=" + YSP_PROXY_KEY;
 
   // API 的 http_header 要求播放请求带 UID + UA；中转侧已带 UA/Referer，播放器只连 Worker
   var playHeaders = { "User-Agent": YSP_UA };
