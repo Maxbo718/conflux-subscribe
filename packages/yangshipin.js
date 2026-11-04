@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.0";
+var YSP_VERSION = "1.0.1";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -5918,7 +5918,7 @@ return {rnd:function(s){return invoke("get_token_rnd",s);},sign:function(s){retu
   return { rnd: rnd, sign: sign };
 })();
 
-var YSP_VERSION = "1.0.0";
+var YSP_VERSION = "1.0.1";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
