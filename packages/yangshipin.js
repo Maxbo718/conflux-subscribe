@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.9";
+var YSP_VERSION = "1.0.10";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -96,6 +96,7 @@ definePackage({
       title: "直播线路",
       description: "央视频高清直播线路（FHD）。",
       accepts: { sources: ["custom"], mediaTypes: ["movie"] },
+      cache: { ttlSeconds: 0 },
       sources: yspPlaybackSources,
     },
   ],
