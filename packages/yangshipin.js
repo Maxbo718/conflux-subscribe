@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.2.0";
+var YSP_VERSION = "1.2.1";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -6025,11 +6025,14 @@ async function yspProxyPost(ctx, endpoint, body, label, encode, customHeaders) {
   } catch (e) {}
   var url = base + endpoint + "?" + (parts.length ? parts.join("&") + "&" : "") + "k=" + YSP_PROXY_KEY;
   var response = null;
+  var tReq = Date.now();
   try {
     response = await ctx.http.get(url, { timeoutMs: 15000 });
   } catch (error) {
+    if (ctx && ctx.console) ctx.console.log("[ysp] " + endpoint + " FAILED " + (Date.now() - tReq) + "ms: " + String(error && error.message || error));
     yspExtError(label + " 网络请求失败：" + (error && error.message ? error.message : error), "unavailable", true);
   }
+  if (ctx && ctx.console) ctx.console.log("[ysp] " + endpoint + " " + (response && response.status) + " " + (Date.now() - tReq) + "ms");
   if (!response || typeof response.status !== "number") {
     yspExtError(label + " 网络请求无响应", "unavailable", true);
   }
@@ -6321,16 +6324,18 @@ async function yspPlaybackSources(ctx, input) {
     if (YSP_CHANNELS[i].pid === pid || pid.indexOf(YSP_CHANNELS[i].pid + ":") === 0) { ch = YSP_CHANNELS[i]; break; }
   }
   if (!ch) return [];
+  var t0 = Date.now();
+  if (ctx && ctx.console) ctx.console.log("[ysp] resolve start pid=" + ch.pid);
   // 不吞错误——让 ExtensionError 传播给 App，用户能看到真正的失败原因
   var r = await yspFetchPlayback(ctx, ch.pid, ch.cnlid);
-  var headers = { "User-Agent": YSP_UA, Referer: YSP_HOST + "/" };
+  if (ctx && ctx.console) ctx.console.log("[ysp] resolve ok " + (Date.now() - t0) + "ms url=" + String(r.url).slice(0, 90));
   return [
     {
       id: "hls-main",
       name: ch.title + " · " + r.description,
       url: r.url,
       description: "m3u8 · 高清直播",
-      headers: headers,
+      headers: r.headers || { "User-Agent": YSP_UA },
       skipRedirectProbe: true,
     },
   ];
