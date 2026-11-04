@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.4";
+var YSP_VERSION = "1.0.5";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -6188,12 +6188,12 @@ function yspSearchKey(value) {
 async function yspRailLoad(ctx, input) {
   var params = (input && input.params) || {};
   var group = String(params.group || "yangshi");
-  var out = [];
+  var items = [];
   for (var i = 0; i < YSP_CHANNELS.length; i++) {
     var ch = YSP_CHANNELS[i];
-    if (group === "all" || ch.group === group) out.push(yspChannelItem(ch));
+    if (group === "all" || ch.group === group) items.push(yspChannelItem(ch));
   }
-  return out;
+  return { items: items };
 }
 
 // ---------- list：频道列表 ----------
