@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-04T01:07:05Z",
+  "updated": "2026-11-04T01:11:35Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -53,7 +53,8 @@
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/yangshipin.js",
       "description": "央视频（yangshipin.cn）电视频道直播：央视与 CGTN、省级卫视，FHD 高清线路，支持按分类浏览与频道搜索。",
-      "author": "Maxbo718"
+      "author": "Maxbo718",
+      "icon": "https://sapi.yangshipin.cn/assets/2022/pcicon/favicon.ico"
     }
   ]
 }
