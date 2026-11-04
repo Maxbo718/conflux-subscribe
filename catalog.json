@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-04T09:58:43Z",
+  "updated": "2026-11-04T10:25:48Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -38,24 +38,6 @@
       "author": "Conflux Community",
       "icon": "https://huangguoai.com/apple-touch-icon.png",
       "changelog": "3.3.6：列表页导航栏加搜索入口（跟随官方 list.search 规范）；3.3.5：新增扩展源图标"
-    },
-    {
-      "id": "conflux.yangshipin.live",
-      "title": "央视频直播",
-      "version": "1.2.2",
-      "engine": 1,
-      "types": [
-        "widget",
-        "list",
-        "search",
-        "detail",
-        "playback"
-      ],
-      "url": "https://maxbo718.github.io/conflux-subscribe/packages/yangshipin.js",
-      "description": "央视频（yangshipin.cn）电视频道直播：央视与 CGTN、省级卫视，FHD 高清线路，支持按分类浏览与频道搜索。",
-      "author": "Maxbo718",
-      "icon": "https://maxbo718.github.io/conflux-subscribe/icons/yangshipin.png",
-      "changelog": "1.2.2：中转 URL 带 .m3u8/.ts 扩展名（播放器靠扩展名识别 HLS，纯 query 形态会被当普通文件报「Invalid data found」）；1.2.1：取流各步打点日志 + 播放源用解析结果 headers；1.2.0：播放改走 Worker 中转（播放 CDN 有 IPv6，AVPlayer 走 IPv6 会永久卡「解析媒体」）"
     }
   ]
 }
