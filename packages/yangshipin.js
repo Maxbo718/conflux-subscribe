@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.1.1";
+var YSP_VERSION = "1.1.2";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -6046,14 +6046,7 @@ async function yspResolveChannel(ctx, ch) {
     yspExtError("无效的直播频道", "invalid_params", false);
   }
   var guid = Date.now().toString(36) + "_" + yspRandom(11);
-  var headers = {
-    "User-Agent": YSP_UA,
-    Referer: YSP_HOST + "/",
-    Origin: YSP_HOST,
-    yspappid: YSP_APPID,
-    Cookie:
-      "guid=" + guid + "; nseqId=1; vplatform=109; versionName=99.99.99; versionCode=999999; platformVersion=Safari; deviceModel=18.0; newLogin=1",
-  };
+  // 请求头由 Worker 代理侧按 guid 组装（UA/Referer/Cookie），包端只算签名参数
   var a = { pid: ch.pid, guid: guid, appid: "ysp_pc", rand_str: yspRandom(10) };
   a.signature = yspSign(a, "n@7QKk%YeSjfw%22");
 
@@ -6091,7 +6084,9 @@ async function yspResolveChannel(ctx, ch) {
   // auth：原为 POST form body，现走 Worker 代理（GET query → Worker POST form）
   var auth = yspPayload(await yspProxyPost(ctx, "/auth", a, "直播鉴权", "form"), "直播鉴权");
   if (!auth.token || !auth.ts) yspExtError("直播鉴权缺少凭据", "parse_failed", false);
-  var open = yspPayload(await yspHttpGet(ctx, "https://h5access.yangshipin.cn/web/open/token?" + yspQuery(openParams, true), headers, "匿名签名凭据"), "匿名签名凭据");
+  // token 原为直连 h5access（GET），但该域名在国内被 DNS 污染（解析到境外 IP 连接挂起，
+  // App 端表现为「解析媒体」永久转圈）——改走 Worker 代理
+  var open = yspPayload(await yspProxyPost(ctx, "/token", openParams, "匿名签名凭据", "form"), "匿名签名凭据");
   if (!open.token) yspExtError("匿名签名凭据为空", "parse_failed", false);
 
   var input = YspCrypto.md5(yspQuery(params, true));
