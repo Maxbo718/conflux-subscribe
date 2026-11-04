@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.1.2";
+var YSP_VERSION = "1.2.0";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -5971,6 +5971,29 @@ async function yspHttpGet(ctx, url, headers, label) {
   return response.data;
 }
 
+// URL-safe base64（不补 =，供 Worker 中转参数用）。手动实现：包内没有 btoa。
+function yspB64Url(str) {
+  var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  var bytes = [];
+  for (var i = 0; i < str.length; i++) {
+    var c = str.charCodeAt(i);
+    if (c < 0x80) bytes.push(c);
+    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  var out = "";
+  for (var j = 0; j < bytes.length; j += 3) {
+    var b0 = bytes[j], b1 = bytes[j + 1], b2 = bytes[j + 2];
+    out += chars[b0 >> 2];
+    out += chars[((b0 & 3) << 4) | ((b1 || 0) >> 4)];
+    if (b1 === undefined) break;
+    out += chars[((b1 & 15) << 2) | ((b2 || 0) >> 6)];
+    if (b2 === undefined) break;
+    out += chars[b2 & 63];
+  }
+  return out;
+}
+
 // POST 参数 → Worker 代理：Conflux 端发 GET，参数全部放 query。
 // encode: "form" → 参数逐个放 query，Worker 用 application/x-www-form-urlencoded 转发（auth）；
 //         "json" → 整个 JSON body 作为单个 json= 参数传（保留数字/字符串类型，GET query 会把
@@ -6114,12 +6137,23 @@ async function yspResolveChannel(ctx, ch) {
   if (info.chanll) yspExtError("该频道需要网页专用播放校验，未返回未经验证的线路", "not_found", false);
   if (!/^https?:\/\//i.test(String(info.playurl || ""))) yspExtError("直播接口未返回有效地址", "parse_failed", false);
 
-  // API 的 http_header 要求播放请求带 UID + UA；Referer 保险起见保留
-  var playHeaders = { "User-Agent": YSP_UA, Referer: YSP_HOST + "/" };
+  // 播放走 Worker 中转：播放 CDN 有 IPv6，AVPlayer 优先 IPv6（家宽 Clash 下路径不通会
+  // 永久卡「解析媒体」）；Worker 是 IPv4 出口，同时重写播放列表里的相对分段地址。
+  var playUrl = String(info.playurl || "") + (info.extended_param || "");
+  var origin = YSP_PROXY;
+  try {
+    if (ctx && ctx.settings && typeof ctx.settings.proxyBase === "string" && /^https:\/\//.test(ctx.settings.proxyBase.trim())) {
+      origin = ctx.settings.proxyBase.trim().replace(/\/+$/, "");
+    }
+  } catch (e) {}
+  var relayUrl = origin + "/live/m3u8?k=" + YSP_PROXY_KEY + "&u=" + yspB64Url(playUrl);
+
+  // API 的 http_header 要求播放请求带 UID + UA；中转侧已带 UA/Referer，播放器只连 Worker
+  var playHeaders = { "User-Agent": YSP_UA };
   if (info.http_header && info.http_header.UID) playHeaders.UID = String(info.http_header.UID);
 
   return {
-    url: info.playurl + (info.extended_param || ""),
+    url: relayUrl,
     headers: playHeaders,
     description: String(info.defn || "直播").toUpperCase(),
   };
