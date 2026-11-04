@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-04T08:49:02Z",
+  "updated": "2026-11-04T08:52:53Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -42,7 +42,7 @@
     {
       "id": "conflux.yangshipin.live",
       "title": "央视频直播",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "engine": 1,
       "types": [
         "widget",
@@ -55,7 +55,7 @@
       "description": "央视频（yangshipin.cn）电视频道直播：央视与 CGTN、省级卫视，FHD 高清线路，支持按分类浏览与频道搜索。",
       "author": "Maxbo718",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/yangshipin.png",
-      "changelog": "1.2.0：播放改走 Worker 中转（播放 CDN 有 IPv6，AVPlayer 走 IPv6 路径不通会永久卡「解析媒体」，与原组件作者的甲骨文中转同构）并重写播放列表分段地址；1.1.2：匿名签名凭据（token）也改走代理——h5access.yangshipin.cn 被 DNS 污染，App 直连会永久卡「解析媒体」；1.1.1：补全播放 CDN 权限并携带 UID 头；1.1.0：取流改走自建代理，解决「没有可用线路」"
+      "changelog": "1.2.1：取流各步打点日志（调试页可看），播放源改用解析结果的 headers；1.2.0：播放改走 Worker 中转（播放 CDN 有 IPv6，AVPlayer 走 IPv6 路径不通会永久卡「解析媒体」，与原组件作者的甲骨文中转同构）并重写播放列表分段地址；1.1.2：匿名签名凭据（token）也改走代理——h5access.yangshipin.cn 被 DNS 污染，App 直连会永久卡「解析媒体」；1.1.1：补全播放 CDN 权限并携带 UID 头；1.1.0：取流改走自建代理，解决「没有可用线路」"
     }
   ]
 }
