@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.3";
+var YSP_VERSION = "1.0.4";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -7,7 +7,7 @@ definePackage({
   description:
     "央视频（yangshipin.cn）电视频道直播：央视与 CGTN、省级卫视，FHD 高清线路，支持按分类浏览与频道搜索。",
   author: "Maxbo718",
-  icon: "https://maxbo718.github.io/conflux-subscribe/packages/yangshipin-icon.png",
+  icon: "https://maxbo718.github.io/conflux-subscribe/icons/yangshipin.png",
   site: "https://www.yangshipin.cn/",
   version: YSP_VERSION,
   engine: 1,
