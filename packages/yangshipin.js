@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.5";
+var YSP_VERSION = "1.0.6";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -6237,6 +6237,7 @@ async function yspDetailLoad(ctx, input) {
     genre: yspGroupTitle(ch),
     images: { poster: ch.logo, backdrop: ch.logo },
     description: ch.title + " · " + yspGroupTitle(ch) + " · 央视频高清直播",
+    episodes: [{ season: 1, episode: 1, title: "高清直播" }],
   };
 }
 
