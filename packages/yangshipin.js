@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.1.0";
+var YSP_VERSION = "1.1.1";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -21,6 +21,10 @@ definePackage({
       "https://player-api.yangshipin.cn",
       "https://h5access.yangshipin.cn",
       "https://www.yangshipin.cn",
+      // 播放 CDN：get_live_info 实测返回 outlivecloud-cdn（主）与 bkoutlivecloud-cdn（备），
+      // live-dtocnc / hlsliveali 是历史调度节点；host 漏写 permissions 播放器加载不了（ddys 样例同款坑）
+      "https://outlivecloud-cdn.ysp.cctv.cn",
+      "https://bkoutlivecloud-cdn.ysp.cctv.cn",
       "https://hlsliveali-cdn.ysp.cctv.cn",
       "https://live-dtocnc-cdn.ysp.cctv.cn",
       "https://live-",
@@ -6115,9 +6119,13 @@ async function yspResolveChannel(ctx, ch) {
   if (info.chanll) yspExtError("该频道需要网页专用播放校验，未返回未经验证的线路", "not_found", false);
   if (!/^https?:\/\//i.test(String(info.playurl || ""))) yspExtError("直播接口未返回有效地址", "parse_failed", false);
 
+  // API 的 http_header 要求播放请求带 UID + UA；Referer 保险起见保留
+  var playHeaders = { "User-Agent": YSP_UA, Referer: YSP_HOST + "/" };
+  if (info.http_header && info.http_header.UID) playHeaders.UID = String(info.http_header.UID);
+
   return {
     url: info.playurl + (info.extended_param || ""),
-    headers: { "User-Agent": YSP_UA, Referer: YSP_HOST + "/" },
+    headers: playHeaders,
     description: String(info.defn || "直播").toUpperCase(),
   };
 }
