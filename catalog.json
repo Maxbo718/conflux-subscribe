@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-04T07:17:35Z",
+  "updated": "2026-11-04T08:02:53Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -42,7 +42,7 @@
     {
       "id": "conflux.yangshipin.live",
       "title": "央视频直播",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "engine": 1,
       "types": [
         "widget",
@@ -55,7 +55,7 @@
       "description": "央视频（yangshipin.cn）电视频道直播：央视与 CGTN、省级卫视，FHD 高清线路，支持按分类浏览与频道搜索。",
       "author": "Maxbo718",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/yangshipin.png",
-      "changelog": "1.1.0：取流改走自建代理（App 端 ctx.http.post 无法发送 body，签名参数经代理转发），解决「没有可用线路」；新增包设置可自定义代理地址。注意：默认代理为海外出口，体育频道可能提示版权限制；1.0.12 及以前：直连取流在 App 上不可用"
+      "changelog": "1.1.1：补全播放 CDN 权限（outlivecloud/bkoutlivecloud，缺 host 会导致播放器一直「解析媒体」）并携带 API 要求的 UID 头；1.1.0：取流改走自建代理，解决「没有可用线路」，默认代理为海外出口、体育频道可能提示版权限制"
     }
   ]
 }
