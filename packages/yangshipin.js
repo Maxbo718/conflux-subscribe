@@ -1,4 +1,4 @@
-var YSP_VERSION = "1.0.2";
+var YSP_VERSION = "1.0.3";
 var VERSION = YSP_VERSION; // 发布核对用（pitfalls #15：包内版本与订阅同步）
 
 definePackage({
@@ -5918,6 +5918,31 @@ function invoke(name,s){state=s;var out=retasmFunc.__wbindgen_add_to_stack_point
 return {rnd:function(s){return invoke("get_token_rnd",s);},sign:function(s){return invoke("get_signature",s);}};
   return { rnd: rnd, sign: sign };
 })();
+
+function yspExtError(message, code, retryable) {
+  throw ExtensionError({ code: code || "internal", message: message, retryable: retryable === true });
+}
+
+function yspJoin(base,ref){var m=/^(https?):\/\/([^\/]+)([^?#]*)/.exec(String(base));if(!m)throw Error("无效直播地址");ref=String(ref||"").trim();if(/^https?:\/\//i.test(ref))return ref;if(ref.indexOf("//")===0)return m[1]+":"+ref;if(ref.charAt(0)==="?")return m[1]+"://"+m[2]+(m[3]||"/")+ref;var raw=ref.charAt(0)==="/"?ref:(m[3]||"/").replace(/[^\/]*$/,"")+ref;var q=raw.search(/[?#]/),suffix=q<0?"":raw.slice(q),parts=(q<0?raw:raw.slice(0,q)).split("/"),out=[];for(var i=0;i<parts.length;i++){if(parts[i]===".."){if(out.length)out.pop();}else if(parts[i]&&parts[i]!==".")out.push(parts[i]);}return m[1]+"://"+m[2]+"/"+out.join("/")+suffix;}
+function yspHttpOK(r){var s=r.statusCode||r.status||200;if(s<200||s>=300)throw Error("直播媒体 HTTP "+s);}
+
+// ---------- 直连央视频取流（已砍掉原组件的私人甲骨文中转）----------
+// ctx.http.post(url, options)：body 放 options（参考官方 hongguo.js）。
+async function yspHttpGet(ctx, url, headers, label) {
+  var response = null;
+  try {
+    response = await ctx.http.get(url, { headers: headers, timeoutMs: 15000 });
+  } catch (error) {
+    yspExtError(label + " 网络请求失败：" + (error && error.message ? error.message : error), "unavailable", true);
+  }
+  if (!response || typeof response.status !== "number") {
+    yspExtError(label + " 网络请求无响应", "unavailable", true);
+  }
+  if (response.status < 200 || response.status >= 300) {
+    yspExtError(label + " HTTP " + response.status, response.status === 401 ? "auth" : "unavailable", true);
+  }
+  return response.data;
+}
 
 // encode："form"（默认）把对象转 urlencoded 串，用于 /auth；"json" 直接传对象，由运行时 JSON 序列化，用于 get_live_info
 async function yspHttpPost(ctx, url, body, headers, label, encode) {
