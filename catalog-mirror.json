@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Conflux 官方扩展全集（镜像）",
   "description": "ConfluxOne/ExtensionSamples 全部扩展现已收录，包体直连官方仓库，目录与版本号每日自动跟随官方更新。",
-  "updated": "2026-11-05T09:29:22Z",
+  "updated": "2026-11-05T18:00:59Z",
   "packages": [
     {
       "id": "conflux.bangumi",
@@ -25,7 +25,7 @@
       "title": "哔哩哔哩直播",
       "description": "哔哩哔哩直播（live.bilibili.com）：热门与分区直播、搜索、直播间详情和多清晰度线路。",
       "author": "Anonymous",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "engine": 1,
       "changelog": "",
       "types": [
@@ -117,10 +117,10 @@
     },
     {
       "id": "conflux.hongguo.app",
-      "title": "红果短剧 · App 线路",
-      "description": "红果短剧（hongguoduanju.com）：官网数据 + 本地 relay 解析 App 线路，用 options.decryptionKey 播放全部分集；relay 不可用时回退官网公开线路。",
+      "title": "红果短剧 · 增强线路",
+      "description": "红果短剧（hongguoduanju.com）：官网数据 + 本地 relay 解析，可播放全部分集；relay 不可用时回退官网公开线路。",
       "author": "Anonymous",
-      "version": "1.0.0",
+      "version": "1.0.2",
       "engine": 1,
       "changelog": "",
       "types": [
