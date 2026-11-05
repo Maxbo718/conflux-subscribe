@@ -13,7 +13,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.0.1";
+var VERSION = "2.0.3";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "play.tv";
 
@@ -651,6 +651,8 @@ var GZ_UA = "Phenomara/1 CFNetwork/3896.200.61 Darwin/27.2.0";
 var GZ_PLAY_UA = "AppleCoreMedia/1.0.0.24A5390f (iPhone; U; CPU OS 27_0 like Mac OS X; zh_cn)";
 var GZ_KEY = "aaaabbbbccccdddd", GZ_IV = "1111222233334444";
 var GZ_SALT = "&ffddffujhjhgvdvdvdz4Y!s!2br";
+/* 服务端真实下发的 keys 原文，仅用于离线自检 RSA 解密链路 */
+var DIAG_KEYS_SAMPLE = "JFZUd8mqgXZd2CDftn4RtskUusUSZV7ZVq5/cPoe1Axt6Fm2lCNvQQf97lDO/YVQy5XHh2BixjQxKgyGhOVaG1qkLdvg/SOjzf+Tt4DT+bUrFqPEVzWgrLcUHt59Ytj4gcGumx9gtG8FQVxUJnGsDOx7XWcZvvmaN1VcE5jhbUQ=";
 var GZ_APPVER = "2026033001", GZ_APIVER = "3.0.6.3";
 var GZ_PKGNAME = "com.jfm202203", GZ_CODE = "GZ0520";
 var GZ_PUB = "-----BEGIN PUBLIC KEY-----MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCWJafJAdhTPWMrNpbmlk672o06smRwxe1LoHjy2XbLRaKIXfQJWgJTBhLH4qUIPMmpnIKQYqjMLTrJhwG5Bwsd3/15YHdL7eWad7lpomF5doOQmmexK2+gSBHmCOhXeumhrOD63vx8ERepxR6UCxTi5b5fZmqMdbLk45IW39mn6wIDAQAB-----END PUBLIC KEY-----";
@@ -1154,57 +1156,86 @@ definePackage({
       type: "widget",
       id: "diag",
       title: "诊断",
-      description: "逐项报告环境 / 连通 / POST 形态 / 鉴权 / 取数结果",
+      description: "逐项报告环境 / 连通 / POST 形态 / 请求头 / 鉴权，并显示上游原始响应",
       template: "poster-grid",
       itemAspectRatio: 16 / 9,
       load: async function (ctx) {
         var out = [];
         var t0 = Date.now();
         function add(t, s) {
-          out.push({ ref: { source: "custom", id: "diag:" + out.length }, title: t, subtitle: String(s).slice(0, 200), mediaType: "movie" });
+          out.push({ ref: { source: "custom", id: "diag:" + out.length }, title: t, subtitle: String(s).slice(0, 400), mediaType: "movie" });
         }
-        function err(e) { return (e && (e.message || e.reason || e)) ? String(e.message || e.reason || e) : "未知"; }
-        function brief(v) {
-          if (v === null || v === undefined) return "null";
-          if (typeof v === "string") return "str(" + v.length + ") " + v.slice(0, 40);
-          var o = asObject(v), k = Object.keys(o);
-          return "obj{" + k.slice(0, 5).join(",") + "}";
+        function err(e) { return String((e && (e.message || e.reason)) || e); }
+        /* 把一次响应摊平成可读文本：优先取 data，其次整个响应 */
+        function raw(res) {
+          if (!res) return "null";
+          var body = res.data !== undefined ? res.data : res;
+          if (typeof body === "string") return "str:" + body.slice(0, 260);
+          try { return "obj:" + JSON.stringify(body).slice(0, 260); } catch (e) { return "obj(不可序列化)"; }
         }
-        var H = { time: 0 };
-        try { H.time = typeof setTimeout; } catch (e) { H.time = "err"; }
+        function hasKeys(res) {
+          var b = res && res.data !== undefined ? res.data : res;
+          var d = b && b.data;
+          return !!(d && d.response_key && d.keys);
+        }
+        var H = null;
+        try { H = gzHeaders(); } catch (e) { H = null; }
         add("① 环境", "post=" + (ctx && ctx.http ? typeof ctx.http.post : "无") +
           " get=" + (ctx && ctx.http ? typeof ctx.http.get : "无") +
-          " setTimeout=" + H.time + " Promise=" + typeof Promise);
+          " setTimeout=" + (typeof setTimeout) + " Promise=" + typeof Promise +
+          " 头数=" + (H ? Object.keys(H).length : "构造失败"));
         try {
           var tg = Date.now();
           var rg = await ctx.http.get("https://api.sef5w7.com/domain/check", { timeoutMs: 8000 });
-          add("② GET 连通 " + (Date.now() - tg) + "ms", "status=" + (rg && rg.status) + " " + brief(rg && rg.data));
+          add("② GET 连通 " + (Date.now() - tg) + "ms", "status=" + (rg && rg.status) + " " + raw(rg));
         } catch (e) { add("② GET 连通", "异常：" + err(e)); }
+        var u = "https://api.sef5w7.com/App/NewDiscover/getList";
+        var p = { cateId: "148", page: 1, pageSize: 10 };
         try {
           var t3 = Date.now();
-          var r3 = await ctx.http.post("https://api.sef5w7.com/App/NewDiscover/getList", gzPayload({ cateId: "148", page: 1, pageSize: 10 }), { headers: gzHeaders(), timeoutMs: 12000 });
-          add("③ POST 三参 " + (Date.now() - t3) + "ms", "status=" + (r3 && r3.status) + " " + brief(r3 && r3.data));
-        } catch (e) { add("③ POST 三参", "异常：" + err(e)); }
+          var r3 = await ctx.http.post(u, gzPayload(p), { headers: H, timeoutMs: 12000 });
+          add("③ 三参全头 " + (Date.now() - t3) + "ms", "status=" + (r3 && r3.status) + " keys=" + hasKeys(r3) + " " + raw(r3));
+        } catch (e) { add("③ 三参全头", "异常：" + err(e)); }
         try {
           var t2 = Date.now();
-          var r2 = await ctx.http.post("https://api.sef5w7.com/App/NewDiscover/getList", { headers: gzHeaders(), body: gzPayload({ cateId: "148", page: 1, pageSize: 10 }), timeoutMs: 12000 });
-          add("④ POST 两参 " + (Date.now() - t2) + "ms", "status=" + (r2 && r2.status) + " " + brief(r2 && r2.data));
-        } catch (e) { add("④ POST 两参", "异常：" + err(e)); }
+          var r2 = await ctx.http.post(u, { headers: H, body: gzPayload(p), timeoutMs: 12000 });
+          add("④ 两参全头 " + (Date.now() - t2) + "ms", "status=" + (r2 && r2.status) + " keys=" + hasKeys(r2) + " " + raw(r2));
+        } catch (e) { add("④ 两参全头", "异常：" + err(e)); }
+        try {
+          var tm = Date.now();
+          var miniH = { "Content-Type": "application/json", "User-Agent": GZ_UA };
+          var rm = await ctx.http.post(u, { headers: miniH, body: gzPayload(p), timeoutMs: 12000 });
+          add("⑤ 两参小头 " + (Date.now() - tm) + "ms", "status=" + (rm && rm.status) + " keys=" + hasKeys(rm) + " " + raw(rm));
+        } catch (e) { add("⑤ 两参小头", "异常：" + err(e)); }
         try {
           var ta = Date.now();
           var ok = await gzLogin(ctx, "https://api.sef5w7.com");
-          add("⑤ 鉴权 " + (Date.now() - ta) + "ms", (ok ? "成功 token=" + String(GZ_STATE.token).slice(0, 8) + "…" : "失败") + " 形态=" + GZ_STATE.style);
-        } catch (e) { add("⑤ 鉴权", "异常：" + err(e)); }
+          add("⑥ 鉴权 " + (Date.now() - ta) + "ms", (ok ? "成功 token=" + String(GZ_STATE.token).slice(0, 8) + "…" : "失败") + " 形态=" + GZ_STATE.style);
+        } catch (e) { add("⑥ 鉴权", "异常：" + err(e)); }
         try {
           var tr = Date.now();
           var jr = await apiGet(ctx, "/rank/148", { page: 1, size: 10 });
-          add("⑥ 榜单接口 " + (Date.now() - tr) + "ms", "条目=" + asArray(jr && jr.list).length);
-        } catch (e) { add("⑥ 榜单接口", "异常：" + err(e)); }
+          add("⑦ 榜单接口 " + (Date.now() - tr) + "ms", "条目=" + asArray(jr && jr.list).length);
+        } catch (e) { add("⑦ 榜单接口", "异常：" + err(e)); }
+        /* 密码学自检：全部离线。RSA 用一段服务端真实下发的 keys 原文来验证
+           （本地 rsaEncrypt→rsaDecrypt 往返本来就不成立，不能当判据）。 */
         try {
-          var it = await apiGet(ctx, "/search", { kw: "甄嬛传" });
-          add("⑦ 搜索接口", "条目=" + asArray(it && it.list).length);
-        } catch (e) { add("⑦ 搜索接口", "异常：" + err(e)); }
-        add("⑧ 总耗时", (Date.now() - t0) + "ms · 域名=" + (GZ_STATE.host || "未确定"));
+          var cs = [];
+          var aesOK = false, rsaOK = false, md5OK = false;
+          try {
+            var ct = GxCrypto.aesEncryptHex('{"a":1}', GZ_KEY, GZ_IV);
+            aesOK = GxCrypto.aesDecryptHex(ct, GZ_KEY, GZ_IV) === '{"a":1}';
+          } catch (e) { cs.push("aes:" + err(e)); }
+          try {
+            var ai = JSON.parse(GxCrypto.rsaDecrypt(DIAG_KEYS_SAMPLE, GZ_PRIV));
+            rsaOK = !!(ai && String(ai.key).length === 16 && String(ai.iv).length === 16);
+          } catch (e) { cs.push("rsa:" + err(e)); }
+          try { md5OK = String(GxCrypto.md5("abc")).toLowerCase() === "900150983cd24fb0d6963f7d28e17f72"; }
+          catch (e) { cs.push("md5:" + err(e)); }
+          add("⑨ 密码学自检", "aes=" + aesOK + " rsa=" + rsaOK + " md5=" + md5OK +
+            " keys长度=" + String(gzKeysBlob()).length + (cs.length ? " " + cs.join(" ") : ""));
+        } catch (e) { add("⑨ 密码学自检", "异常：" + err(e)); }
+        add("⑩ 总耗时", (Date.now() - t0) + "ms · 域名=" + (GZ_STATE.host || "未确定"));
         return out;
       },
     },
