@@ -14,7 +14,7 @@
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
 var VERSION = "2.0.0";
-/* 包图标：SF Symbol（原 Worker 上的 png 已随直连改造下线） */
+/* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "play.tv";
 
 /* 官方周榜 / 流媒体新片榜（cateId 与 guazi_cates.tsv 对齐） */
@@ -1563,7 +1563,7 @@ definePackage({
         var detail = (raw && typeof raw === "object") ? raw : asJson(raw) || {};
         var eps = episodesOf(detail, vodId, null);
 
-        /* 封面/标题来自 ref.id 打包（worker /catalog 只给分集；storage 会崩，已弃用） */
+        /* 封面/标题来自 ref.id 打包（目录接口只给分集；ctx.storage 在 widget 里会崩，已弃用） */
         var meta = parsed.meta || {};
         var cover = imageUrl(ctx, meta.c);
         if (cover.indexOf("http") !== 0 && cover) cover = IMG_PREFIX + cover;
