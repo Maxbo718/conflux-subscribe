@@ -13,7 +13,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.0.3";
+var VERSION = "2.0.4";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "play.tv";
 
@@ -668,7 +668,11 @@ var GZ_THIRD = "https://raw.githubusercontent.com/tdopops/jiafeimao/main/0103/jf
 var GZ_THIRD_AES = { key: "m4nQCskrndxTCULX", iv: "92ilxgNlcweTTfvG" };
 
 /* 进程内状态：token / 设备号 / 已选域名 / post 调用形态 */
-var GZ_STATE = { host: "", token: "", tid: "", dev: "", style: "three", swaps: 0 };
+/* 请求形态候选：真机 ctx.http.post 的调用约定各版本不一致，
+   官方的红果包（App 内实测可用）用「两参 + body 传对象」，bangumi 用「三参 + body 字符串」。
+   这里按顺序试，第一个能解出响应包络的形态锁定下来，之后不再试探。 */
+var GZ_SHAPES = ["obj2", "str2", "obj2mini", "str3"];
+var GZ_STATE = { host: "", token: "", tid: "", dev: "", style: "", swaps: 0 };
 var GZ_KEYS_CACHE = "";
 var GZ_REMOTE_CACHE = null;
 
@@ -708,26 +712,58 @@ function gzPayload(params) {
 }
 /* ctx.http.post 形态自适应：官方样例两种写法并存（post(url,{headers,body}) 与 post(url, bodyStr, opts)）。
    先试 options-body 形态；抛异常或鉴权拿不到 token 时切到三参形态并记住。 */
+/* 响应里是否带加密包络（服务端用我们发的 AES key 加密后的 data） */
+function gzHasEnvelope(res) {
+  var body = res && res.data !== undefined ? res.data : res;
+  var d = body && body.data;
+  return !!(d && d.response_key && d.keys);
+}
+
+function gzMiniHeaders() {
+  return { "Content-Type": "application/json", "Accept": "application/json, text/plain, */*", "User-Agent": GZ_UA };
+}
+
+async function gzPostShape(ctx, url, bodyStr, shape) {
+  var t0 = Date.now();
+  var res;
+  if (shape === "obj2" || shape === "obj2mini") {
+    var hd = shape === "obj2mini" ? gzMiniHeaders() : gzHeaders();
+    res = await ctx.http.post(url, { headers: hd, body: JSON.parse(bodyStr), timeoutMs: 20000 });
+  } else if (shape === "str3") {
+    res = await ctx.http.post(url, bodyStr, { headers: gzHeaders(), timeoutMs: 20000 });
+  } else {
+    res = await ctx.http.post(url, { headers: gzHeaders(), body: bodyStr, timeoutMs: 20000 });
+  }
+  gzLog(ctx, shape + " " + (Date.now() - t0) + "ms status=" + (res && res.status) + " " + url.replace(/^https:\/\//, "").slice(0, 56));
+  return res;
+}
+
+/* 按候选顺序请求，返回第一个能解出响应包络的结果；全部失败返回最后一次的 null */
 async function gzPostRaw(ctx, url, bodyStr) {
-  var hd = gzHeaders();
-  /* 主形态用文档/官方 bangumi 的三参写法；运行时若是「两参 options」语义会抛错或空体，
-     由上层 gzSwapStyle 一次性切到 options 形态并锁定，不再来回抖动。 */
-  if (GZ_STATE.style !== "options") {
+  var order = GZ_STATE.style ? [GZ_STATE.style] : GZ_SHAPES;
+  var best = null, firstErr = null;
+  for (var i = 0; i < order.length; i++) {
     try {
-      var t3 = Date.now();
-      var r3 = await ctx.http.post(url, bodyStr, { headers: hd, timeoutMs: 20000 });
-      gzLog(ctx, "POST3 " + (Date.now() - t3) + "ms " + url.replace(/^https:\/\//, "").slice(0, 60) + " status=" + (r3 && r3.status));
-      return r3;
+      var res = await gzPostShape(ctx, url, bodyStr, order[i]);
+      var enc = gzHasEnvelope(res);
+      var obj = gzDecode(res);
+      if (obj && (enc || num(obj.code) === 200)) {
+        GZ_STATE.style = order[i];
+        gzLog(ctx, "形态锁定 " + order[i]);
+        return obj;
+      }
+      /* 能解析但没有加密包络、code 也不是 200：多半这个形态的 body 没送到，
+         记下第一个错误包络（含服务端原话），继续试下一个形态 */
+      if (obj && !best) best = obj;
+      gzLog(ctx, order[i] + " 未通过 code=" + (obj ? obj.code : "null"));
     } catch (e) {
-      gzLog(ctx, "POST3 异常：" + (e && e.message ? e.message : e));
-      if (GZ_STATE.style === "three" && GZ_STATE.swaps >= 1) throw e;
-      GZ_STATE.style = "options";
+      if (!firstErr) firstErr = e;
+      gzLog(ctx, order[i] + " 异常：" + ((e && e.message) || e));
     }
   }
-  var t2 = Date.now();
-  var r2 = await ctx.http.post(url, { headers: hd, body: bodyStr, timeoutMs: 20000 });
-  gzLog(ctx, "POST2 " + (Date.now() - t2) + "ms " + url.replace(/^https:\/\//, "").slice(0, 60) + " status=" + (r2 && r2.status));
-  return r2;
+  if (best) return best;
+  if (firstErr) throw firstErr;
+  return null;
 }
 function gzDecode(res) {
   var obj = asJson(res && res.data);
@@ -751,8 +787,7 @@ async function gzLoginPass(ctx, host) {
   var paths = ["/App/Authentication/Device/signIn", "/App/Authentication/Device/signUp"];
   for (var i = 0; i < paths.length; i++) {
     try {
-      var obj = gzDecode(await gzPostRaw(ctx, host + paths[i], gzPayload({ new_key: dev, old_key: dev })));
-      if (!obj && gzSwapStyle()) obj = gzDecode(await gzPostRaw(ctx, host + paths[i], gzPayload({ new_key: dev, old_key: dev })));
+      var obj = await gzPostRaw(ctx, host + paths[i], gzPayload({ new_key: dev, old_key: dev }));
       gzLog(ctx, "login " + paths[i].slice(-20) + " code=" + (obj && obj.code));
       if (obj && num(obj.code) === 200 && obj.data && obj.data.token) {
         GZ_STATE.token = str(obj.data.token);
@@ -811,13 +846,6 @@ async function gzRemoteHosts(ctx) {
   return out;
 }
 /* 切换 post 形态（options ↔ three），全局最多切 2 次 */
-function gzSwapStyle() {
-  /* 只切一次：切到能用就锁定，避免在两种形态之间来回抖动放大请求量 */
-  if (GZ_STATE.swaps >= 1) return false;
-  GZ_STATE.swaps++;
-  GZ_STATE.style = GZ_STATE.style === "options" ? "three" : "options";
-  return true;
-}
 /* 单域名一次尝试：需要鉴权时先登录；token 失效就重登一次 */
 function gzLog(ctx, msg) {
   try { if (ctx && ctx.console && typeof ctx.console.log === "function") ctx.console.log("[guazi] " + msg); } catch (e) {}
@@ -832,19 +860,18 @@ function gzDelay(ms) {
 
 async function gzAttempt(ctx, host, path, params, needAuth) {
   if (needAuth && !GZ_STATE.token) { if (!(await gzLogin(ctx, host))) return null; }
-  var obj = gzDecode(await gzPostRaw(ctx, host + path, gzPayload(params)));
-  if (!obj && gzSwapStyle()) obj = gzDecode(await gzPostRaw(ctx, host + path, gzPayload(params)));
+  var obj = await gzPostRaw(ctx, host + path, gzPayload(params));
   var code = num(obj && obj.code);
   if (code === 301 || code === 401 || code === 403) {
     GZ_STATE.token = ""; GZ_STATE.tid = "";
-    if (await gzLogin(ctx, host)) obj = gzDecode(await gzPostRaw(ctx, host + path, gzPayload(params)));
+    if (await gzLogin(ctx, host)) obj = await gzPostRaw(ctx, host + path, gzPayload(params));
   }
   /* 并发一高上游会用 404/300 假错误限流（实测并发 16 时 50 次调用出现 70 次 404），
      退避 600ms 重发一次即可恢复，不必换域名 */
   code = num(obj && obj.code);
   if (code === 429 || code === 404 || code === 300) {
     await gzDelay(600);
-    obj = gzDecode(await gzPostRaw(ctx, host + path, gzPayload(params)));
+    obj = await gzPostRaw(ctx, host + path, gzPayload(params));
   }
   return obj;
 }
@@ -1156,7 +1183,7 @@ definePackage({
       type: "widget",
       id: "diag",
       title: "诊断",
-      description: "逐项报告环境 / 连通 / POST 形态 / 请求头 / 鉴权，并显示上游原始响应",
+      description: "逐项报告环境 / 连通 / 三种请求形态 / 鉴权 / 取数，并显示上游原始响应",
       template: "poster-grid",
       itemAspectRatio: 16 / 9,
       load: async function (ctx) {
@@ -1173,11 +1200,7 @@ definePackage({
           if (typeof body === "string") return "str:" + body.slice(0, 260);
           try { return "obj:" + JSON.stringify(body).slice(0, 260); } catch (e) { return "obj(不可序列化)"; }
         }
-        function hasKeys(res) {
-          var b = res && res.data !== undefined ? res.data : res;
-          var d = b && b.data;
-          return !!(d && d.response_key && d.keys);
-        }
+        var hasKeys = gzHasEnvelope;
         var H = null;
         try { H = gzHeaders(); } catch (e) { H = null; }
         add("① 环境", "post=" + (ctx && ctx.http ? typeof ctx.http.post : "无") +
@@ -1191,22 +1214,18 @@ definePackage({
         } catch (e) { add("② GET 连通", "异常：" + err(e)); }
         var u = "https://api.sef5w7.com/App/NewDiscover/getList";
         var p = { cateId: "148", page: 1, pageSize: 10 };
-        try {
-          var t3 = Date.now();
-          var r3 = await ctx.http.post(u, gzPayload(p), { headers: H, timeoutMs: 12000 });
-          add("③ 三参全头 " + (Date.now() - t3) + "ms", "status=" + (r3 && r3.status) + " keys=" + hasKeys(r3) + " " + raw(r3));
-        } catch (e) { add("③ 三参全头", "异常：" + err(e)); }
-        try {
-          var t2 = Date.now();
-          var r2 = await ctx.http.post(u, { headers: H, body: gzPayload(p), timeoutMs: 12000 });
-          add("④ 两参全头 " + (Date.now() - t2) + "ms", "status=" + (r2 && r2.status) + " keys=" + hasKeys(r2) + " " + raw(r2));
-        } catch (e) { add("④ 两参全头", "异常：" + err(e)); }
-        try {
-          var tm = Date.now();
-          var miniH = { "Content-Type": "application/json", "User-Agent": GZ_UA };
-          var rm = await ctx.http.post(u, { headers: miniH, body: gzPayload(p), timeoutMs: 12000 });
-          add("⑤ 两参小头 " + (Date.now() - tm) + "ms", "status=" + (rm && rm.status) + " keys=" + hasKeys(rm) + " " + raw(rm));
-        } catch (e) { add("⑤ 两参小头", "异常：" + err(e)); }
+        function shapeRow(name, shape) {
+          return (async function () {
+            try {
+              var ts = Date.now();
+              var rs = await gzPostShape(ctx, u, gzPayload(p), shape);
+              add(name + " " + (Date.now() - ts) + "ms", "status=" + (rs && rs.status) + " keys=" + hasKeys(rs) + " " + raw(rs));
+            } catch (e) { add(name, "异常：" + err(e)); }
+          })();
+        }
+        await shapeRow("③ 对象body", "obj2");
+        await shapeRow("④ 字符串body", "str2");
+        await shapeRow("⑤ 三参body", "str3");
         try {
           var ta = Date.now();
           var ok = await gzLogin(ctx, "https://api.sef5w7.com");
