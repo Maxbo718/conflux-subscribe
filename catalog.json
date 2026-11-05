@@ -2,12 +2,12 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-05T05:08:33Z",
+  "updated": "2026-11-05T05:15:14Z",
   "packages": [
     {
       "id": "conflux.guazi",
       "title": "瓜子影视",
-      "version": "2.0.3",
+      "version": "2.0.4",
       "engine": 1,
       "types": [
         "widget",
@@ -19,7 +19,7 @@
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/guazi.js",
       "description": "15 个独立榜单 + 全站播放，直连源站（不依赖任何中转/Worker）：周榜、流媒体新片、搜索、详情、选集与 HLS 直链播放",
       "icon": "play.tv",
-      "changelog": "2.0.3：诊断卡改为显示上游原始响应 + 离线密码学自检（AES/RSA/MD5），用于定位真机取数失败。2.0.0：改为直连源站，不再依赖中转/Worker。"
+      "changelog": "2.0.4：请求形态改为自动探测（对象 body / 字符串 body / 三参），哪种能拿到加密响应就锁定哪种，真机不再因 ctx.http.post 约定不同而全盘失败；诊断卡同时展示三种形态的原始响应。"
     },
     {
       "id": "conflux.huangguo",
