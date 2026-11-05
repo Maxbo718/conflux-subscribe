@@ -13,9 +13,9 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.1.0";
+var VERSION = "2.1.1";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
-var ICON = "play.tv";
+var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
 /* 官方周榜 / 流媒体新片榜（cateId 与 guazi_cates.tsv 对齐） */
 var RANKS = [
