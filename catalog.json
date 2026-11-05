@@ -2,12 +2,12 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-04T10:25:48Z",
+  "updated": "2026-11-05T03:29:23Z",
   "packages": [
     {
       "id": "conflux.guazi",
       "title": "瓜子影视",
-      "version": "1.2.7",
+      "version": "2.0.0",
       "engine": 1,
       "types": [
         "widget",
@@ -17,9 +17,9 @@
         "playback"
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/guazi.js",
-      "description": "15 个独立榜单 + 全站播放：周榜、流媒体新片、搜索、详情、选集与直连播放",
-      "icon": "https://guazi.113210833.xyz/icon.png",
-      "changelog": "1.2.7：修复播放线路取数的状态码判定遗漏；1.2.6：修复 HTTP 状态码判定（ctx.http 返回 status 而非 ok），错误码改用协议标准值并带 retryable；1.2.5：列表页导航栏加搜索入口"
+      "description": "15 个独立榜单 + 全站播放，直连源站（不依赖任何中转/Worker）：周榜、流媒体新片、搜索、详情、选集与 HLS 直链播放",
+      "icon": "play.tv",
+      "changelog": "2.0.0：改为直连源站，不再依赖任何中转/Worker。鉴权、AES/MD5 签名、RSA 解密全部在包内完成，搜索·榜单·详情·播放直接请求站点 API；播放返回源站 m3u8 直链（带播放器 UA），不再经过 HLS 中转；榜单支持「加载更多」分页；包图标改用 SF Symbol，域名池可在设置里手动覆盖。"
     },
     {
       "id": "conflux.huangguo",
@@ -37,7 +37,7 @@
       "description": "提供黄果 AI 短剧、漫剧、换脸与魔改视频浏览、搜索、选集与全集流畅播放",
       "author": "Conflux Community",
       "icon": "https://huangguoai.com/apple-touch-icon.png",
-      "changelog": "3.3.6：列表页导航栏加搜索入口（跟随官方 list.search 规范）；3.3.5：新增扩展源图标"
+      "changelog": "3.3.6：列表导航栏接入搜索框；跨库匹配增加集数校验，避免同名不同片串集。"
     }
   ]
 }
