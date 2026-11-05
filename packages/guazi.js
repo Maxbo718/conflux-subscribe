@@ -13,7 +13,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.0.0";
+var VERSION = "2.0.1";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "play.tv";
 
@@ -712,13 +712,20 @@ async function gzPostRaw(ctx, url, bodyStr) {
      由上层 gzSwapStyle 一次性切到 options 形态并锁定，不再来回抖动。 */
   if (GZ_STATE.style !== "options") {
     try {
-      return await ctx.http.post(url, bodyStr, { headers: hd, timeoutMs: 20000 });
+      var t3 = Date.now();
+      var r3 = await ctx.http.post(url, bodyStr, { headers: hd, timeoutMs: 20000 });
+      gzLog(ctx, "POST3 " + (Date.now() - t3) + "ms " + url.replace(/^https:\/\//, "").slice(0, 60) + " status=" + (r3 && r3.status));
+      return r3;
     } catch (e) {
+      gzLog(ctx, "POST3 异常：" + (e && e.message ? e.message : e));
       if (GZ_STATE.style === "three" && GZ_STATE.swaps >= 1) throw e;
       GZ_STATE.style = "options";
     }
   }
-  return await ctx.http.post(url, { headers: hd, body: bodyStr, timeoutMs: 20000 });
+  var t2 = Date.now();
+  var r2 = await ctx.http.post(url, { headers: hd, body: bodyStr, timeoutMs: 20000 });
+  gzLog(ctx, "POST2 " + (Date.now() - t2) + "ms " + url.replace(/^https:\/\//, "").slice(0, 60) + " status=" + (r2 && r2.status));
+  return r2;
 }
 function gzDecode(res) {
   var obj = asJson(res && res.data);
@@ -744,6 +751,7 @@ async function gzLoginPass(ctx, host) {
     try {
       var obj = gzDecode(await gzPostRaw(ctx, host + paths[i], gzPayload({ new_key: dev, old_key: dev })));
       if (!obj && gzSwapStyle()) obj = gzDecode(await gzPostRaw(ctx, host + paths[i], gzPayload({ new_key: dev, old_key: dev })));
+      gzLog(ctx, "login " + paths[i].slice(-20) + " code=" + (obj && obj.code));
       if (obj && num(obj.code) === 200 && obj.data && obj.data.token) {
         GZ_STATE.token = str(obj.data.token);
         GZ_STATE.tid = str(obj.data.token_id);
@@ -809,6 +817,10 @@ function gzSwapStyle() {
   return true;
 }
 /* 单域名一次尝试：需要鉴权时先登录；token 失效就重登一次 */
+function gzLog(ctx, msg) {
+  try { if (ctx && ctx.console && typeof ctx.console.log === "function") ctx.console.log("[guazi] " + msg); } catch (e) {}
+}
+
 function gzDelay(ms) {
   return new Promise(function (resolve) {
     if (typeof setTimeout === "function") setTimeout(resolve, ms);
@@ -1137,6 +1149,65 @@ definePackage({
     },
   ],
   extensions: [
+    /* ---------- 诊断（排查用；确认正常后可删） ---------- */
+    {
+      type: "widget",
+      id: "diag",
+      title: "诊断",
+      description: "逐项报告环境 / 连通 / POST 形态 / 鉴权 / 取数结果",
+      template: "poster-grid",
+      itemAspectRatio: 16 / 9,
+      load: async function (ctx) {
+        var out = [];
+        var t0 = Date.now();
+        function add(t, s) {
+          out.push({ ref: { source: "custom", id: "diag:" + out.length }, title: t, subtitle: String(s).slice(0, 200), mediaType: "movie" });
+        }
+        function err(e) { return (e && (e.message || e.reason || e)) ? String(e.message || e.reason || e) : "未知"; }
+        function brief(v) {
+          if (v === null || v === undefined) return "null";
+          if (typeof v === "string") return "str(" + v.length + ") " + v.slice(0, 40);
+          var o = asObject(v), k = Object.keys(o);
+          return "obj{" + k.slice(0, 5).join(",") + "}";
+        }
+        var H = { time: 0 };
+        try { H.time = typeof setTimeout; } catch (e) { H.time = "err"; }
+        add("① 环境", "post=" + (ctx && ctx.http ? typeof ctx.http.post : "无") +
+          " get=" + (ctx && ctx.http ? typeof ctx.http.get : "无") +
+          " setTimeout=" + H.time + " Promise=" + typeof Promise);
+        try {
+          var tg = Date.now();
+          var rg = await ctx.http.get("https://api.sef5w7.com/domain/check", { timeoutMs: 8000 });
+          add("② GET 连通 " + (Date.now() - tg) + "ms", "status=" + (rg && rg.status) + " " + brief(rg && rg.data));
+        } catch (e) { add("② GET 连通", "异常：" + err(e)); }
+        try {
+          var t3 = Date.now();
+          var r3 = await ctx.http.post("https://api.sef5w7.com/App/NewDiscover/getList", gzPayload({ cateId: "148", page: 1, pageSize: 10 }), { headers: gzHeaders(), timeoutMs: 12000 });
+          add("③ POST 三参 " + (Date.now() - t3) + "ms", "status=" + (r3 && r3.status) + " " + brief(r3 && r3.data));
+        } catch (e) { add("③ POST 三参", "异常：" + err(e)); }
+        try {
+          var t2 = Date.now();
+          var r2 = await ctx.http.post("https://api.sef5w7.com/App/NewDiscover/getList", { headers: gzHeaders(), body: gzPayload({ cateId: "148", page: 1, pageSize: 10 }), timeoutMs: 12000 });
+          add("④ POST 两参 " + (Date.now() - t2) + "ms", "status=" + (r2 && r2.status) + " " + brief(r2 && r2.data));
+        } catch (e) { add("④ POST 两参", "异常：" + err(e)); }
+        try {
+          var ta = Date.now();
+          var ok = await gzLogin(ctx, "https://api.sef5w7.com");
+          add("⑤ 鉴权 " + (Date.now() - ta) + "ms", (ok ? "成功 token=" + String(GZ_STATE.token).slice(0, 8) + "…" : "失败") + " 形态=" + GZ_STATE.style);
+        } catch (e) { add("⑤ 鉴权", "异常：" + err(e)); }
+        try {
+          var tr = Date.now();
+          var jr = await apiGet(ctx, "/rank/148", { page: 1, size: 10 });
+          add("⑥ 榜单接口 " + (Date.now() - tr) + "ms", "条目=" + asArray(jr && jr.list).length);
+        } catch (e) { add("⑥ 榜单接口", "异常：" + err(e)); }
+        try {
+          var it = await apiGet(ctx, "/search", { kw: "甄嬛传" });
+          add("⑦ 搜索接口", "条目=" + asArray(it && it.list).length);
+        } catch (e) { add("⑦ 搜索接口", "异常：" + err(e)); }
+        add("⑧ 总耗时", (Date.now() - t0) + "ms · 域名=" + (GZ_STATE.host || "未确定"));
+        return out;
+      },
+    },
     /* ---------- Widget：瓜子影视 ---------- */
     {
       type: "widget",
