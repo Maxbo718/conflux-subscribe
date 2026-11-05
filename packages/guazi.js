@@ -1,18 +1,21 @@
 /**
- * Conflux Extension — 瓜子影视（聚合榜单 + 全站播放）
- * engine 1。数据经 Cloudflare Worker 协议桥：guazi.113210833.xyz
- *   /rank/{cateId}?page=1  榜单列表（10 条/页）
- *   /search?kw=            全站搜索（≤20 条）
- *   /catalog/{vodId}       剧集目录
- *   /play/{vurlId}         播放页（内含 data-hls 直链）
- * 协议层由「瓜子榜单」组件原样拼接，加密/鉴权/域名轮换逻辑零重写。
+ * Conflux Extension — 瓜子影视（聚合榜单 + 全站播放）· 直连版（无 Worker）
+ * engine 1。加密 / 签名 / 域名轮换全部在本包内完成，请求直连站点 API：
+ *   鉴权  POST /App/Authentication/Device/signIn | signUp
+ *   榜单  POST /App/NewDiscover/getList     {cateId, page, pageSize}
+ *   搜索  POST /App/Index/findMoreVod       {keywords, order_val}
+ *   目录  POST /App/Resource/Vurl/show      {vod_d_id, vurl_cloud_id:"2"}
+ *   播放  POST /App/Resource/Vod/vurlDetail {vurl_id} → 源站 m3u8 直链
+ * 协议参考：ZenmoFeiShi/Forward forward_rank.js（同站，AES-CBC + MD5 + RSA 纯 JS）。
+ * 播放不再经过中转：源站只拦浏览器 UA，播放器 UA（AppleCoreMedia）直接放行。
+ *
+ * 已知边界：
+ *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
+ *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "1.2.7";
-
-var API_BASE = "https://guazi.113210833.xyz";
-/* HLS 规范化代理：给清单补 .m3u8、分片补 .ts、带 3 次重试与显式 Content-Length */
-var HLS_PROXY = "https://gzhls.113210833.xyz";
-var ICON = "https://guazi.113210833.xyz/icon.png";
+var VERSION = "2.0.0";
+/* 包图标：SF Symbol（原 Worker 上的 png 已随直连改造下线） */
+var ICON = "play.tv";
 
 /* 官方周榜 / 流媒体新片榜（cateId 与 guazi_cates.tsv 对齐） */
 var RANKS = [
@@ -96,14 +99,6 @@ function unb64u(s) {
   return out;
 }
 
-/* 把协议桥的 /hls/<base64> 还原成源站真实地址（源站只拒浏览器 UA，播放器 UA 可直连） */
-function decodePlayUrl(hlsUrl) {
-  var m = /\/hls\/([A-Za-z0-9+/_-]+)$/.exec(hlsUrl || "");
-  if (!m) return "";
-  var t = m[1].replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  var u = unb64u(t);
-  return /^https?:\/\//i.test(u) ? u : "";
-}
 /* 把列表侧拿到的元数据压进 id；封面去掉公共前缀缩短长度 */
 function packRef(vodId, meta) {
   var m = asObject(meta);
@@ -273,10 +268,6 @@ function fail(msg, code) {
 function enc(s) { try { return encodeURIComponent(str(s)); } catch (e) { return ""; } }
 
 
-function baseUrl(ctx) {
-  var v = ctx && ctx.settings && trim(ctx.settings.apiBase);
-  return v || API_BASE;
-}
 function imageUrl(ctx, u) {
   var s = trim(u);
   if (!s) return "";
@@ -284,19 +275,678 @@ function imageUrl(ctx, u) {
   return s;
 }
 
-async function apiGet(ctx, path, query) {
-  var q = "";
-  if (query) {
-    var parts = [];
-    Object.keys(query).forEach(function (k) {
-      if (query[k] !== undefined && query[k] !== null && query[k] !== "") parts.push(k + "=" + enc(query[k]));
-    });
-    if (parts.length) q = "?" + parts.join("&");
+/* ==================== 纯 JS 加密（AES-CBC / MD5 / RSA-BigInt） ====================
+ * 取自 ZenmoFeiShi/Forward forward_rank.js（同站协议，已在真机长期运行）。
+ * 搬到 Conflux 后不依赖任何宿主原生加密能力。
+ */
+const GxCrypto = (function () {
+  const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+  function utf8Encode(str) {
+    const s = String(str == null ? "" : str);
+    const out = [];
+    for (let i = 0; i < s.length; i++) {
+      let c = s.charCodeAt(i);
+      if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+        const d = s.charCodeAt(i + 1);
+        if (d >= 0xdc00 && d <= 0xdfff) {
+          c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00);
+          i++;
+        }
+      }
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+      else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+      else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    }
+    return out;
   }
-  var res = await ctx.http.get(baseUrl(ctx) + path + q, { timeout: 25000 });
-  check(res);
-  return res.data;
+
+  function utf8Decode(bytes) {
+    let out = "";
+    let i = 0;
+    while (i < bytes.length) {
+      const a = bytes[i++];
+      let c;
+      if (a < 0x80) c = a;
+      else if (a >= 0xf0) c = ((a & 7) << 18) | ((bytes[i++] & 63) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63);
+      else if (a >= 0xe0) c = ((a & 15) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63);
+      else if (a >= 0xc0) c = ((a & 31) << 6) | (bytes[i++] & 63);
+      else c = 0xfffd;
+      if (c > 0xffff) {
+        c -= 0x10000;
+        out += String.fromCharCode(0xd800 + (c >> 10), 0xdc00 + (c & 1023));
+      } else {
+        out += String.fromCharCode(c);
+      }
+    }
+    return out;
+  }
+
+  function hexToBytes(hex) {
+    const h = String(hex || "").replace(/[^0-9a-f]/gi, "");
+    const out = new Array(h.length >> 1);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+    return out;
+  }
+
+  function bytesToHex(bytes) {
+    let out = "";
+    for (let i = 0; i < bytes.length; i++) out += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+    return out;
+  }
+
+  function base64ToBytes(text) {
+    const s = String(text || "").replace(/[^A-Za-z0-9+/]/g, "");
+    const out = [];
+    let buf = 0;
+    let bits = 0;
+    for (let i = 0; i < s.length; i++) {
+      buf = (buf << 6) | B64.indexOf(s.charAt(i));
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        out.push((buf >> bits) & 255);
+      }
+    }
+    return out;
+  }
+
+  function bytesToBase64(bytes) {
+    let out = "";
+    for (let i = 0; i < bytes.length; i += 3) {
+      const a = bytes[i];
+      const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+      const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+      const n = (a << 16) | (b << 8) | c;
+      out += B64.charAt((n >> 18) & 63) + B64.charAt((n >> 12) & 63);
+      out += i + 1 < bytes.length ? B64.charAt((n >> 6) & 63) : "=";
+      out += i + 2 < bytes.length ? B64.charAt(n & 63) : "=";
+    }
+    return out;
+  }
+
+  const SBOX = new Array(256);
+  const INV_SBOX = new Array(256);
+  (function () {
+    let p = 1;
+    let q = 1;
+    do {
+      p = p ^ ((p << 1) & 255) ^ (p & 128 ? 0x1b : 0);
+      q ^= q << 1;
+      q ^= q << 2;
+      q ^= q << 4;
+      q &= 255;
+      if (q & 128) q ^= 0x09;
+      const x = q ^ ((q << 1 | q >> 7) & 255) ^ ((q << 2 | q >> 6) & 255) ^ ((q << 3 | q >> 5) & 255) ^ ((q << 4 | q >> 4) & 255) ^ 0x63;
+      SBOX[p] = x;
+      INV_SBOX[x] = p;
+    } while (p !== 1);
+    SBOX[0] = 0x63;
+    INV_SBOX[0x63] = 0;
+  })();
+
+  function xtime(a) { return ((a << 1) ^ (a & 128 ? 0x1b : 0)) & 255; }
+  function gmul(a, b) {
+    let r = 0;
+    while (b) {
+      if (b & 1) r ^= a;
+      a = xtime(a);
+      b >>= 1;
+    }
+    return r;
+  }
+
+  function expandKey(key) {
+    const nk = key.length >> 2;
+    const nr = nk + 6;
+    const w = key.slice();
+    let rcon = 1;
+    for (let i = nk; i < 4 * (nr + 1); i++) {
+      let t = w.slice((i - 1) * 4, i * 4);
+      if (i % nk === 0) {
+        t = [SBOX[t[1]] ^ rcon, SBOX[t[2]], SBOX[t[3]], SBOX[t[0]]];
+        rcon = xtime(rcon);
+      } else if (nk > 6 && i % nk === 4) {
+        t = t.map(v => SBOX[v]);
+      }
+      for (let j = 0; j < 4; j++) w.push(w[(i - nk) * 4 + j] ^ t[j]);
+    }
+    return { w, nr };
+  }
+
+  function encryptBlock(s, ks) {
+    const { w, nr } = ks;
+    for (let i = 0; i < 16; i++) s[i] ^= w[i];
+    for (let r = 1; r <= nr; r++) {
+      for (let i = 0; i < 16; i++) s[i] = SBOX[s[i]];
+      let t = s[1]; s[1] = s[5]; s[5] = s[9]; s[9] = s[13]; s[13] = t;
+      t = s[2]; s[2] = s[10]; s[10] = t; t = s[6]; s[6] = s[14]; s[14] = t;
+      t = s[15]; s[15] = s[11]; s[11] = s[7]; s[7] = s[3]; s[3] = t;
+      if (r < nr) {
+        for (let c = 0; c < 16; c += 4) {
+          const a0 = s[c], a1 = s[c + 1], a2 = s[c + 2], a3 = s[c + 3];
+          const x = a0 ^ a1 ^ a2 ^ a3;
+          s[c] ^= x ^ xtime(a0 ^ a1);
+          s[c + 1] ^= x ^ xtime(a1 ^ a2);
+          s[c + 2] ^= x ^ xtime(a2 ^ a3);
+          s[c + 3] ^= x ^ xtime(a3 ^ a0);
+        }
+      }
+      for (let i = 0; i < 16; i++) s[i] ^= w[r * 16 + i];
+    }
+    return s;
+  }
+
+  function decryptBlock(s, ks) {
+    const { w, nr } = ks;
+    for (let i = 0; i < 16; i++) s[i] ^= w[nr * 16 + i];
+    for (let r = nr - 1; r >= 0; r--) {
+      let t = s[13]; s[13] = s[9]; s[9] = s[5]; s[5] = s[1]; s[1] = t;
+      t = s[2]; s[2] = s[10]; s[10] = t; t = s[6]; s[6] = s[14]; s[14] = t;
+      t = s[3]; s[3] = s[7]; s[7] = s[11]; s[11] = s[15]; s[15] = t;
+      for (let i = 0; i < 16; i++) s[i] = INV_SBOX[s[i]];
+      for (let i = 0; i < 16; i++) s[i] ^= w[r * 16 + i];
+      if (r > 0) {
+        for (let c = 0; c < 16; c += 4) {
+          const a0 = s[c], a1 = s[c + 1], a2 = s[c + 2], a3 = s[c + 3];
+          s[c] = gmul(a0, 14) ^ gmul(a1, 11) ^ gmul(a2, 13) ^ gmul(a3, 9);
+          s[c + 1] = gmul(a0, 9) ^ gmul(a1, 14) ^ gmul(a2, 11) ^ gmul(a3, 13);
+          s[c + 2] = gmul(a0, 13) ^ gmul(a1, 9) ^ gmul(a2, 14) ^ gmul(a3, 11);
+          s[c + 3] = gmul(a0, 11) ^ gmul(a1, 13) ^ gmul(a2, 9) ^ gmul(a3, 14);
+        }
+      }
+    }
+    return s;
+  }
+
+  function aesCbcEncrypt(data, key, iv) {
+    const ks = expandKey(key);
+    const pad = 16 - (data.length % 16);
+    const src = data.concat(new Array(pad).fill(pad));
+    const out = [];
+    let prev = iv.slice();
+    for (let i = 0; i < src.length; i += 16) {
+      const block = src.slice(i, i + 16).map((v, j) => v ^ prev[j]);
+      prev = encryptBlock(block, ks);
+      for (let j = 0; j < 16; j++) out.push(prev[j]);
+    }
+    return out;
+  }
+
+  function aesCbcDecrypt(data, key, iv) {
+    if (!data.length || data.length % 16) throw new Error("AES 密文长度错误");
+    const ks = expandKey(key);
+    const out = [];
+    let prev = iv.slice();
+    for (let i = 0; i < data.length; i += 16) {
+      const block = data.slice(i, i + 16);
+      const plain = decryptBlock(block.slice(), ks);
+      for (let j = 0; j < 16; j++) out.push(plain[j] ^ prev[j]);
+      prev = block;
+    }
+    const pad = out[out.length - 1];
+    if (pad < 1 || pad > 16) throw new Error("AES 填充错误");
+    return out.slice(0, out.length - pad);
+  }
+
+  function md5(bytes) {
+    const K = [];
+    for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) | 0;
+    const S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+    const msg = bytes.slice();
+    const bitLen = bytes.length * 8;
+    msg.push(0x80);
+    while (msg.length % 64 !== 56) msg.push(0);
+    for (let i = 0; i < 8; i++) msg.push(i < 4 ? (bitLen >>> (8 * i)) & 255 : Math.floor(bitLen / 4294967296) >>> (8 * (i - 4)) & 255);
+    let a0 = 0x67452301, b0 = 0xefcdab89 | 0, c0 = 0x98badcfe | 0, d0 = 0x10325476;
+    for (let off = 0; off < msg.length; off += 64) {
+      const M = [];
+      for (let i = 0; i < 16; i++) M[i] = msg[off + i * 4] | (msg[off + i * 4 + 1] << 8) | (msg[off + i * 4 + 2] << 16) | (msg[off + i * 4 + 3] << 24);
+      let A = a0, B = b0, C = c0, D = d0;
+      for (let i = 0; i < 64; i++) {
+        let F, g;
+        if (i < 16) { F = (B & C) | (~B & D); g = i; }
+        else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+        else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+        else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+        const sh = S[(i >> 4) * 4 + (i & 3)];
+        const x = (A + F + K[i] + M[g]) | 0;
+        A = D; D = C; C = B;
+        B = (B + ((x << sh) | (x >>> (32 - sh)))) | 0;
+      }
+      a0 = (a0 + A) | 0; b0 = (b0 + B) | 0; c0 = (c0 + C) | 0; d0 = (d0 + D) | 0;
+    }
+    const out = [];
+    [a0, b0, c0, d0].forEach(v => { for (let i = 0; i < 4; i++) out.push((v >>> (8 * i)) & 255); });
+    return bytesToHex(out);
+  }
+
+  let ZERO, ONE;
+  function initBig() {
+    if (ONE) return;
+    if (typeof BigInt !== "function") throw new Error("当前运行环境不支持 BigInt");
+    ZERO = BigInt(0);
+    ONE = BigInt(1);
+  }
+
+  function bytesToBig(bytes) {
+    initBig();
+    const h = bytesToHex(bytes);
+    return h ? BigInt("0x" + h) : ZERO;
+  }
+
+  function bigToBytes(n, len) {
+    let h = n.toString(16);
+    if (h.length % 2) h = "0" + h;
+    const b = hexToBytes(h);
+    while (b.length < len) b.unshift(0);
+    return b;
+  }
+
+  function modPow(base, exp, mod) {
+    let r = ONE;
+    let b = base % mod;
+    let e = exp;
+    while (e > ZERO) {
+      if (e & ONE) r = (r * b) % mod;
+      e >>= ONE;
+      b = (b * b) % mod;
+    }
+    return r;
+  }
+
+  function derIntegers(bytes) {
+    const ints = [];
+    (function walk(start, end) {
+      let p = start;
+      while (p < end) {
+        const tag = bytes[p++];
+        let len = bytes[p++];
+        if (len & 128) {
+          const n = len & 127;
+          len = 0;
+          for (let i = 0; i < n; i++) len = len * 256 + bytes[p++];
+        }
+        if (tag === 0x02) ints.push(bytesToBig(bytes.slice(p, p + len)));
+        else if (tag === 0x30) walk(p, p + len);
+        else if (tag === 0x03) walk(p + 1, p + len);
+        else if (tag === 0x04) { try { walk(p, p + len); } catch (e) {} }
+        p += len;
+      }
+    })(0, bytes.length);
+    return ints;
+  }
+
+  const keyCache = {};
+  function parseKey(pem) {
+    if (keyCache[pem]) return keyCache[pem];
+    const der = base64ToBytes(String(pem).replace(/-----[^-]+-----/g, ""));
+    const ints = derIntegers(der);
+    let i = 0;
+    while (i < ints.length && ints[i] < BigInt(1) << BigInt(256)) i++;
+    const n = ints[i];
+    if (!n) throw new Error("RSA 密钥解析失败");
+    const key = { n, e: ints[i + 1], d: ints[i + 2], p: ints[i + 3], q: ints[i + 4], dp: ints[i + 5], dq: ints[i + 6], qi: ints[i + 7] };
+    key.size = bigToBytes(n, 0).length;
+    keyCache[pem] = key;
+    return key;
+  }
+
+  function rsaEncrypt(text, pem) {
+    const key = parseKey(pem);
+    const k = key.size;
+    const msg = utf8Encode(text);
+    if (msg.length > k - 11) throw new Error("RSA 明文过长");
+    const em = [0, 2];
+    for (let i = 0; i < k - 3 - msg.length; i++) em.push(1 + Math.floor(Math.random() * 255));
+    em.push(0);
+    const c = modPow(bytesToBig(em.concat(msg)), key.e, key.n);
+    return bytesToBase64(bigToBytes(c, k));
+  }
+
+  function rsaPrivate(c, key) {
+    if (key.p && key.q && key.dp && key.dq && key.qi) {
+      const m1 = modPow(c % key.p, key.dp, key.p);
+      const m2 = modPow(c % key.q, key.dq, key.q);
+      let h = ((m1 - m2) * key.qi) % key.p;
+      if (h < ZERO) h += key.p;
+      return m2 + h * key.q;
+    }
+    return modPow(c, key.d, key.n);
+  }
+
+  function rsaDecrypt(b64, pem) {
+    try {
+      const key = parseKey(pem);
+      const k = key.size;
+      const raw = base64ToBytes(b64);
+      let out = [];
+      for (let off = 0; off < raw.length; off += k) {
+        const em = bigToBytes(rsaPrivate(bytesToBig(raw.slice(off, off + k)), key), k);
+        if (em[0] !== 0 || em[1] !== 2) return null;
+        const sep = em.indexOf(0, 2);
+        if (sep < 10) return null;
+        out = out.concat(em.slice(sep + 1));
+      }
+      return utf8Decode(out);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  return {
+    aesEncryptHex: (text, key, iv) => bytesToHex(aesCbcEncrypt(utf8Encode(text), utf8Encode(key), utf8Encode(iv))),
+    aesDecryptHex: (hex, key, iv) => utf8Decode(aesCbcDecrypt(hexToBytes(hex), utf8Encode(key), utf8Encode(iv))),
+    md5: text => md5(utf8Encode(text)),
+    rsaEncrypt,
+    rsaDecrypt,
+    base64Decode: text => utf8Decode(base64ToBytes(text))
+  };
+})();
+
+/* ==================== 瓜子协议常量（来自站点客户端） ==================== */
+var GZ_UA = "Phenomara/1 CFNetwork/3896.200.61 Darwin/27.2.0";
+/* 播放/取流必须用播放器 UA：浏览器类 UA 会被源站 302 到占位清单 */
+var GZ_PLAY_UA = "AppleCoreMedia/1.0.0.24A5390f (iPhone; U; CPU OS 27_0 like Mac OS X; zh_cn)";
+var GZ_KEY = "aaaabbbbccccdddd", GZ_IV = "1111222233334444";
+var GZ_SALT = "&ffddffujhjhgvdvdvdz4Y!s!2br";
+var GZ_APPVER = "2026033001", GZ_APIVER = "3.0.6.3";
+var GZ_PKGNAME = "com.jfm202203", GZ_CODE = "GZ0520";
+var GZ_PUB = "-----BEGIN PUBLIC KEY-----MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCWJafJAdhTPWMrNpbmlk672o06smRwxe1LoHjy2XbLRaKIXfQJWgJTBhLH4qUIPMmpnIKQYqjMLTrJhwG5Bwsd3/15YHdL7eWad7lpomF5doOQmmexK2+gSBHmCOhXeumhrOD63vx8ERepxR6UCxTi5b5fZmqMdbLk45IW39mn6wIDAQAB-----END PUBLIC KEY-----";
+var GZ_PRIV = "-----BEGIN RSA PRIVATE KEY-----MIICXQIBAAKBgQCM+iJdCeYFydG3DiFG0Ajr6IS0NENW1Bb2MSwrUdvLiI7nXHG+zZZuyqewVUPUPQRdEvhSMCyTKjjX9QajRJ1Uv+xVnsOmxEQQIhAIUa1dsXsN30nLGA+VuNHF7J1SE+Vh/46duR/0Q+Iq+3esSYlb3/PdN4wgK5ab+jKeR0JA2wIDAQABAoGAbst/CkPnRZFRgl5WhMKm4FDDSqTwb2MMELygjAMvjIxsUyRyOJR2r+gRViIMxtaVgViRVHaL8bTzK7ZkWxhn1LEM7RpWB1zjKFvXxE+dzxPrYY/Qw7dobzAAMyQhZ2+7PTO/plUYOxNgZPUzsvcoI44M3HRy1yFxGbF9z9LiMDECQQDTs5eXJnjEN1JmqbBotFw0III0/se/r0oDv4AvJdbxl64t64dZI2tS3BO7NL3OAOzf+WL14Pf2uADFDZz9kzHPAkEAqnn7TBlZXc6L70TnCaggMAN9C+2Iuik2Q2dePfTBI9IyJiC54k4G66iT+kQ5F6T4MGWf6jb7xUuUTk6AHck/NQJBALk+5oAh7v0rt5QUGkSUxjXq2GUNKLbn6Ok8sisPfnVrF8Qg3A+4+ZnI8A8ZSJkxoBUgwWKMWA5w1mOX1O7i1WsCQHV0qgHajUomnx9x18U9gz/Rh3yKYmPxNSPnunTxh4kIr+i5L5mOrRH9CkeqbbOuxBmES1PyIjHjSwFQ8NCU8ekCQQCwb4PirUbcqeHbjN0Nv6vm5pqsgJ29GhA9qiy2l+1Wb637STe9L2mEt7ImUd9FGy7k3Nnsn5eou/t2SV3OkGaU-----END RSA PRIVATE KEY-----";
+/* 站点域名池：任一可用即可；全部失败时再拉远程域名表兜底 */
+var GZ_HOSTS = [
+  "https://api.sef5w7.com", "https://api.mxtxqe.com", "https://sdapi.u4gdp3.com",
+  "https://sdapi.4zu76s.com", "https://sdapi.re3k7n.com", "https://api.8b42w67.com",
+  "https://api.4pmyvfz.com", "https://sdapi.s3432pr.com", "https://sdapi.q5sn3gk.com",
+  "https://apinew.qwepe.com",
+];
+var GZ_THIRD = "https://raw.githubusercontent.com/tdopops/jiafeimao/main/0103/jfm-ios-prod.json";
+var GZ_THIRD_AES = { key: "m4nQCskrndxTCULX", iv: "92ilxgNlcweTTfvG" };
+
+/* 进程内状态：token / 设备号 / 已选域名 / post 调用形态 */
+var GZ_STATE = { host: "", token: "", tid: "", dev: "", style: "three", swaps: 0 };
+var GZ_KEYS_CACHE = "";
+var GZ_REMOTE_CACHE = null;
+
+function gzKeysBlob() {
+  if (!GZ_KEYS_CACHE) GZ_KEYS_CACHE = GxCrypto.rsaEncrypt(JSON.stringify({ key: GZ_KEY, iv: GZ_IV }), GZ_PUB);
+  return GZ_KEYS_CACHE;
 }
+/* 设备号：固定种子派生（同一 App 内稳定，避免每次调用都注册新账号） */
+function gzDeviceId() {
+  if (GZ_STATE.dev) return GZ_STATE.dev;
+  var h = GxCrypto.md5("conflux.guazi.v2|device").toUpperCase();
+  GZ_STATE.dev = h.slice(0, 8) + "-" + h.slice(8, 12) + "-4" + h.slice(12, 15) + "-8" + h.slice(0, 3) + "-" + h.slice(0, 12);
+  return GZ_STATE.dev;
+}
+function gzHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/plain, */*",
+    "Version": GZ_APPVER, "api-ver": GZ_APIVER,
+    "packagename": GZ_PKGNAME, "code": GZ_CODE, "ver": GZ_APIVER,
+    "deviceid": gzDeviceId(), "ip": "", "lang": "zh_cn",
+    "User-Agent": GZ_UA, "x-customer-client-ip": "", "parent-code": "",
+  };
+}
+function gzPayload(params) {
+  var ts = Math.floor(new Date().getTime() / 1000);
+  var rk = GxCrypto.aesEncryptHex(JSON.stringify(params || {}), GZ_KEY, GZ_IV);
+  var keys = gzKeysBlob();
+  var tok = GZ_STATE.token, tid = GZ_STATE.tid;
+  var sb = "token_id=" + tid + ",token=" + tok + ",phone_type=2,request_key=" + rk +
+    ",app_id=1,time=" + ts + ",keys=" + keys;
+  return JSON.stringify({
+    token: tok, token_id: tid, time: ts, app_id: "1", phone_type: 2,
+    keys: keys, request_key: rk,
+    signature: GxCrypto.md5(sb + "*" + GZ_SALT).toUpperCase(), ad_version: 1,
+  });
+}
+/* ctx.http.post 形态自适应：官方样例两种写法并存（post(url,{headers,body}) 与 post(url, bodyStr, opts)）。
+   先试 options-body 形态；抛异常或鉴权拿不到 token 时切到三参形态并记住。 */
+async function gzPostRaw(ctx, url, bodyStr) {
+  var hd = gzHeaders();
+  /* 主形态用文档/官方 bangumi 的三参写法；运行时若是「两参 options」语义会抛错或空体，
+     由上层 gzSwapStyle 一次性切到 options 形态并锁定，不再来回抖动。 */
+  if (GZ_STATE.style !== "options") {
+    try {
+      return await ctx.http.post(url, bodyStr, { headers: hd, timeoutMs: 20000 });
+    } catch (e) {
+      if (GZ_STATE.style === "three" && GZ_STATE.swaps >= 1) throw e;
+      GZ_STATE.style = "options";
+    }
+  }
+  return await ctx.http.post(url, { headers: hd, body: bodyStr, timeoutMs: 20000 });
+}
+function gzDecode(res) {
+  var obj = asJson(res && res.data);
+  if (!obj) return null;
+  var d = obj.data;
+  if (d && d.response_key && d.keys) {
+    try {
+      var ai = JSON.parse(GxCrypto.rsaDecrypt(d.keys, GZ_PRIV));
+      var txt = GxCrypto.aesDecryptHex(d.response_key, ai.key, ai.iv);
+      try { obj.data = JSON.parse(txt); } catch (e2) { obj.data = txt; }
+    } catch (e) {
+      /* 解不开 ⇒ 不是「请求成功」：多半是运行时没把 body 送到（post 形态不对），
+         交给上层切形态重试；真错误时上层会抛 unavailable。 */
+      return null;
+    }
+  }
+  return obj;
+}
+async function gzLoginPass(ctx, host) {
+  var dev = gzDeviceId();
+  var paths = ["/App/Authentication/Device/signIn", "/App/Authentication/Device/signUp"];
+  for (var i = 0; i < paths.length; i++) {
+    try {
+      var obj = gzDecode(await gzPostRaw(ctx, host + paths[i], gzPayload({ new_key: dev, old_key: dev })));
+      if (!obj && gzSwapStyle()) obj = gzDecode(await gzPostRaw(ctx, host + paths[i], gzPayload({ new_key: dev, old_key: dev })));
+      if (obj && num(obj.code) === 200 && obj.data && obj.data.token) {
+        GZ_STATE.token = str(obj.data.token);
+        GZ_STATE.tid = str(obj.data.token_id);
+        return true;
+      }
+    } catch (e) { /* 换下一个入口 / 下一个域名 */ }
+  }
+  return false;
+}
+
+/* 运行时的 post 形态在「两参 options」与「三参 body」之间不统一：
+ * 官方 hongguo/ddys 用前者，bangumi 与文档用后者，央视频那次两种都失败（pitfall #21/#22）。
+ * 这里以鉴权结果为判据自适应：哪种形态能拿到 token 就用哪种，之后不再试探。 */
+async function gzLogin(ctx, host) {
+  if (await gzLoginPass(ctx, host)) return true;
+  if (GZ_STATE.style !== "three") {
+    GZ_STATE.style = "three";
+    if (await gzLoginPass(ctx, host)) return true;
+  }
+  if (GZ_STATE.style !== "options") {
+    GZ_STATE.style = "options";
+    if (await gzLoginPass(ctx, host)) return true;
+  }
+  return false;
+}
+function gzHosts(ctx) {
+  var out = [];
+  /* 上次成功的域名优先，省掉一轮试错 */
+  if (GZ_STATE.host) out.push(GZ_STATE.host);
+  var custom = trim(ctx && ctx.settings && ctx.settings.apiHost).replace(/\/+$/, "");
+  if (custom && /^https?:\/\//i.test(custom)) out.push(custom);
+  for (var i = 0; i < GZ_HOSTS.length; i++) if (out.indexOf(GZ_HOSTS[i]) < 0) out.push(GZ_HOSTS[i]);
+  return out;
+}
+/* 兜底：拉远程域名表（作者维护），解出域名后追加尝试 */
+async function gzRemoteHosts(ctx) {
+  if (GZ_REMOTE_CACHE) return GZ_REMOTE_CACHE;
+  var out = [];
+  try {
+    var res = await ctx.http.get(GZ_THIRD, { headers: { "User-Agent": GZ_UA }, timeoutMs: 8000 });
+    var root = asJson(res && res.data);
+    var enc = root && root.code === 200 && root.data && root.data.response_key;
+    if (enc) {
+      var txt = GxCrypto.aesDecryptHex(enc, GZ_THIRD_AES.key, GZ_THIRD_AES.iv);
+      var list = asJson(txt) && asJson(txt).list;
+      if (Object.prototype.toString.call(list) === "[object Array]") {
+        for (var i = 0; i < list.length; i++) {
+          var u = trim(list[i]).replace(/\/+$/, "");
+          if (/^https:\/\/[a-z0-9.-]+$/i.test(u) && out.indexOf(u) < 0) out.push(u);
+        }
+      }
+    }
+  } catch (e) { /* 远程表不可用就算了，不阻断 */ }
+  GZ_REMOTE_CACHE = out;
+  return out;
+}
+/* 切换 post 形态（options ↔ three），全局最多切 2 次 */
+function gzSwapStyle() {
+  /* 只切一次：切到能用就锁定，避免在两种形态之间来回抖动放大请求量 */
+  if (GZ_STATE.swaps >= 1) return false;
+  GZ_STATE.swaps++;
+  GZ_STATE.style = GZ_STATE.style === "options" ? "three" : "options";
+  return true;
+}
+/* 单域名一次尝试：需要鉴权时先登录；token 失效就重登一次 */
+function gzDelay(ms) {
+  return new Promise(function (resolve) {
+    if (typeof setTimeout === "function") setTimeout(resolve, ms);
+    else resolve();
+  });
+}
+
+async function gzAttempt(ctx, host, path, params, needAuth) {
+  if (needAuth && !GZ_STATE.token) { if (!(await gzLogin(ctx, host))) return null; }
+  var obj = gzDecode(await gzPostRaw(ctx, host + path, gzPayload(params)));
+  if (!obj && gzSwapStyle()) obj = gzDecode(await gzPostRaw(ctx, host + path, gzPayload(params)));
+  var code = num(obj && obj.code);
+  if (code === 301 || code === 401 || code === 403) {
+    GZ_STATE.token = ""; GZ_STATE.tid = "";
+    if (await gzLogin(ctx, host)) obj = gzDecode(await gzPostRaw(ctx, host + path, gzPayload(params)));
+  }
+  /* 并发一高上游会用 404/300 假错误限流（实测并发 16 时 50 次调用出现 70 次 404），
+     退避 600ms 重发一次即可恢复，不必换域名 */
+  code = num(obj && obj.code);
+  if (code === 429 || code === 404 || code === 300) {
+    await gzDelay(600);
+    obj = gzDecode(await gzPostRaw(ctx, host + path, gzPayload(params)));
+  }
+  return obj;
+}
+/* 主入口：多域名轮换 + 远程域名兜底；成功返回 data，失败抛 ExtensionError */
+async function gzCall(ctx, path, params, needAuth) {
+  var hosts = gzHosts(ctx);
+  var lastMsg = "";
+  for (var pass = 0; pass < 2; pass++) {
+    for (var i = 0; i < hosts.length; i++) {
+      var host = hosts[i];
+      var obj = null;
+      try { obj = await gzAttempt(ctx, host, path, params, needAuth); }
+      catch (e) { lastMsg = (e && e.message) || "网络异常"; continue; }
+      /* 解不开不是域名问题，换域名只会白白放大请求量 */
+      if (!obj) { lastMsg = "响应无法解密"; break; }
+      var code = num(obj.code);
+      if (code === 200) { GZ_STATE.host = host; return obj.data !== undefined && obj.data !== null ? obj.data : obj; }
+      lastMsg = pick(obj.msg, "接口返回 " + code);
+      /* 只对鉴权/限流类错误换域名，业务错误直接抛 */
+      if (code !== 301 && code !== 401 && code !== 403 && code !== 429) break;
+    }
+    if (pass === 0) {
+      var extra = await gzRemoteHosts(ctx);
+      for (var k = 0; k < extra.length; k++) if (hosts.indexOf(extra[k]) < 0) hosts.push(extra[k]);
+      if (!extra.length) break;
+    }
+  }
+  fail("瓜子接口不可用：" + pick(lastMsg, "所有域名均失败"), "unavailable");
+}
+
+/* ---------- 统一数据整形：把两种上游行形态（榜单/搜索）归一 ----------
+ * 榜单行：vod_id / title / pic / score / vod_year / vod_continu / d_total
+ * 搜索行：vod_id / vod_name / vod_pic / vod_scroe / vod_year / vod_continu / d_total
+ */
+function asRows(v) {
+  if (Object.prototype.toString.call(v) === "[object Array]") return v;
+  if (v && Object.prototype.toString.call(v.list) === "[object Array]") return v.list;
+  return [];
+}
+function normRows(rows) {
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = asObject(rows[i]);
+    var id = digits(r.vod_id || r.id);
+    if (!id) continue;
+    var total = num(r.vod_continu) || num(r.d_total) || num(r.total);
+    out.push({
+      id: id,
+      title: pick(r.title || r.vod_name, "未命名"),
+      cover: trim(r.pic || r.vod_pic),
+      year: trim(r.vod_year),
+      score: trim(r.score || r.vod_scroe),
+      total: total,
+      desc: pick(r.sub_title || r.vod_remarks),
+    });
+  }
+  return out;
+}
+
+/* ---------- 数据入口：保持旧桥的 path 形态，内部直连站点 API ----------
+ * /rank/<cateId>?page=N  → NewDiscover/getList
+ * /search?kw=            → Index/findMoreVod
+ * /catalog/<vodId>       → Resource/Vurl/show
+ * /play/<vurlId>         → Resource/Vod/vurlDetail
+ * token 只在内存里缓存（context 级）：不碰 ctx.storage —— widget.load 里调用会原生崩溃（pitfall #6）。
+ */
+async function apiGet(ctx, path, query, opts) {
+  var q = asObject(query), p = str(path);
+  if (p === "/search") {
+    var kw = trim(q.kw || q.keywords);
+    if (!kw) return { list: [] };
+    var d1 = await gzCall(ctx, "/App/Index/findMoreVod", { keywords: kw, order_val: "" }, true);
+    return { list: normRows(asRows(d1)), more: false };
+  }
+  if (p.indexOf("/rank/") === 0) {
+    var cate = p.slice("/rank/".length);
+    var page = num(q.page) > 0 ? num(q.page) : 1;
+    var size = num(q.size) > 0 ? num(q.size) : 10;
+    /* 榜单列表不要求 token（实测未鉴权也返回 200），省一次登录往返 */
+    var d2 = await gzCall(ctx, "/App/NewDiscover/getList", { cateId: cate, page: page, pageSize: size }, false);
+    return {
+      list: normRows(asRows(d2)),
+      total: num(d2 && d2.total),
+      more: !!(d2 && d2.is_more),
+      page: page,
+    };
+  }
+  if (p.indexOf("/catalog/") === 0) {
+    var vodId = digits(p.slice("/catalog/".length));
+    if (!vodId) return { list: [] };
+    var d3 = await gzCall(ctx, "/App/Resource/Vurl/show", { vod_d_id: vodId, vurl_cloud_id: "2" }, true);
+    var raw = asRows(d3), eps = [];
+    for (var i = 0; i < raw.length; i++) {
+      var e = asObject(raw[i]);
+      if (!e.id) continue;
+      var n = num(e.sort) || eps.length + 1;
+      eps.push({ id: digits(e.id), n: n, title: pick(e.title, "第 " + n + " 集") });
+    }
+    return { list: eps };
+  }
+  if (p.indexOf("/play/") === 0) {
+    var vurlId = digits(p.slice("/play/".length));
+    if (!vurlId) return { list: [] };
+    var d4 = await gzCall(ctx, "/App/Resource/Vod/vurlDetail", { vurl_id: vurlId }, true);
+    var items = asRows(d4), lines = [];
+    for (var j = 0; j < items.length; j++) {
+      var it = asObject(items[j]);
+      var u = trim(it.url);
+      if (!u) continue;
+      lines.push({ url: u, resolution: num(it.resolution), name: pick(it.name) });
+    }
+    return { list: lines };
+  }
+  return { list: [] };
+}
+
 /* 运行时可能返回字符串或已解析对象；统一成对象 */
 function asJson(v) {
   if (v && typeof v === "object") return v;
@@ -420,13 +1070,13 @@ async function fetchRowsByCats(ctx, ids) {
     while (cursor.i < ids.length) {
       var idx = cursor.i++;
       try {
-        var json = await apiGet(ctx, "/rank/" + ids[idx], { page: 1 });
+        var json = await apiGet(ctx, "/rank/" + ids[idx], { page: 1, size: 20 });
         var rows = asArray(asJson(json) && asJson(json).list);
         for (var k = 0; k < rows.length; k++) { if (rows[k] && rows[k].id) out.push(rows[k]); }
       } catch (e) { /* 单个分类失败不影响整体 */ }
     }
   }
-  var running = [], n = Math.min(8, ids.length);
+  var running = [], n = Math.min(6, ids.length); /* 实测并发 16 会触发上游 404 限流，6 更稳 */
   for (var i = 0; i < n; i++) running.push(worker());
   await Promise.all(running);
 
@@ -456,19 +1106,34 @@ definePackage({
   title: "瓜子影视",
   version: VERSION,
   engine: 1,
-  description: "15 个独立榜单 + 全站播放：周榜、流媒体新片、搜索、详情、选集与直连播放",
+  description: "15 个独立榜单 + 全站播放，直连源站（不依赖任何中转/Worker）：周榜、流媒体新片、搜索、详情、选集与 HLS 直链播放",
   icon: ICON,
   permissions: {
-    /* 黄果包同款写法：apiBase 可由用户改，故保留通配前缀（真机已验证不会崩） */
-    network: ["https://", "http://"],
+    /* 前缀通配（官方 danmu.js 同写法）覆盖站点轮换域名 + 用户自填域名；
+       同时逐个列出已知 API 域名与远程兜底表，双保险。 */
+    network: [
+      "https://",
+      "http://",
+      "https://api.sef5w7.com",
+      "https://api.mxtxqe.com",
+      "https://sdapi.u4gdp3.com",
+      "https://sdapi.4zu76s.com",
+      "https://sdapi.re3k7n.com",
+      "https://api.8b42w67.com",
+      "https://api.4pmyvfz.com",
+      "https://sdapi.s3432pr.com",
+      "https://sdapi.q5sn3gk.com",
+      "https://apinew.qwepe.com",
+      "https://raw.githubusercontent.com",
+    ],
   },
   settings: [
     {
-      name: "apiBase",
-      title: "协议桥地址",
+      name: "apiHost",
+      title: "API 域名（留空自动）",
       type: "text",
-      default: API_BASE,
-      description: "Worker 协议桥地址，站点域名变化时改这里（保留 https://）",
+      default: "",
+      description: "留空则在 10 个已知域名中自动择优；站点换域名时可手填 https:// 开头的地址",
     },
   ],
   extensions: [
@@ -860,10 +1525,13 @@ definePackage({
           return { items: mixed };
         }
         var rows = [];
+        var nextPage = null;
         if (id.indexOf("list:rank") === 0 || id.indexOf("list:cat") === 0) {
           var page = input && input.page && num(input.page.page) > 0 ? num(input.page.page) : 1;
-          var json = await apiGet(ctx, "/rank/" + wanted, { page: page });
+          var json = await apiGet(ctx, "/rank/" + wanted, { page: page, size: 20 });
           rows = asArray(asJson(json) && asJson(json).list);
+          /* 只有上游明确还有更多（is_more）才给 next，避免「加载更多」得到空白页 */
+          if (json && json.more) nextPage = { page: page + 1 };
         } else if (id.indexOf("list:search") === 0) {
           var kw = trim(params.kw);
           if (!kw) return { items: [] };
@@ -874,7 +1542,7 @@ definePackage({
         }
         var items = [];
         rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
+        return { items: items, next: nextPage };
       },
     },
 
@@ -958,84 +1626,84 @@ definePackage({
       cache: { ttlSeconds: 0 },
       sources: async function (ctx, input) {
         var ref = (input && input.ref) || {};
-        var parsed = unpackRef(ref.id);
+        var refId = str(ref.id);
+        var parsed = unpackRef(refId);
         var id = parsed.id;
         if (!id) return [];
 
-        /* 定位真正的播放 id（vurlId）。
-           坑：App 传进来的 ref 可能是「影片级」ref（id = vodId），直接拿去 /play/ 会播到
-           完全不相干的片子（vodId 与 vurlId 不同命名空间，实测 /play/147773 → 204s 无关视频）。
-           判据：/catalog/{id} 非空 ⇒ id 是 vodId，按 input.episode 挑分集 id；
-                 空列表 ⇒ id 本身就是分集/播放 id，原样使用。 */
+        var e = input && input.episode;
+        var want = 0;
+        if (typeof e === "number") want = e;
+        else if (e && typeof e.episode === "number") want = e.episode;
+        var epRefId = e && e.ref && e.ref.id;
+        if (!want && epRefId) want = 0;
+
+        /* ref.id 带 "~" ⇒ 影片级 ref（vodId），必须按集号换出 vurlId；
+           纯数字 ⇒ 已是分集 id（vurlId），直接播。
+           坑 #8：拿 vodId 当 vurlId 会静默播出完全不相干的片子。 */
+        var packed = refId.indexOf("~") >= 0;
         var vurlId = id;
-        var epLabel = "";
-        var epRefId = input && input.episode && input.episode.ref && input.episode.ref.id;
-        try {
-          var rawCat = await apiGet(ctx, "/catalog/" + id);
-          var cat = (rawCat && typeof rawCat === "object") ? rawCat : asJson(rawCat) || {};
-          var eps = episodesOf(cat, id, null);
+        var epTitle = "";
+        var eps = [];
+        if (packed) {
+          try {
+            var cat = await apiGet(ctx, "/catalog/" + id);
+            eps = asArray(cat && cat.list);
+          } catch (err) { eps = []; }
           if (eps.length) {
-            var want = 0;
-            var e = input && input.episode;
-            if (typeof e === "number") want = e;
-            else if (e && typeof e.episode === "number") want = e.episode;
             var chosen = null;
-            var i;
-            if (want) {
-              for (i = 0; i < eps.length; i++) {
-                if (eps[i].episode === want) { chosen = eps[i]; break; }
-              }
-            }
-            if (!chosen && epRefId) {
-              var cand = digits(String(epRefId).indexOf("~") >= 0 ? unpackRef(epRefId).id : epRefId);
-              for (i = 0; i < eps.length; i++) {
-                if (eps[i].ref.id === cand) { chosen = eps[i]; break; }
-              }
+            for (var i = 0; i < eps.length; i++) {
+              if (!want || num(eps[i].n) === want) { chosen = eps[i]; break; }
             }
             if (!chosen) chosen = eps[0];
-            vurlId = chosen.ref.id;
-            /* 电影不挂「第N集」标签：以 ref.mediaType 为准（详情已判定形态）。
-               不能用 eps.length>1 —— 电影可能被拆成 2 个分片。 */
-            epLabel = (String((input && input.ref && input.ref.mediaType) || "") === "movie")
-              ? "" : (chosen.title || "");
-          } else if (epRefId) {
-            vurlId = digits(String(epRefId).indexOf("~") >= 0 ? unpackRef(epRefId).id : epRefId) || id;
+            vurlId = digits(chosen.id) || id;
+            epTitle = pick(chosen.title);
           }
-        } catch (err) {
-          /* 目录查询失败不阻断播放，退回原 id */
         }
+        /* 电影不挂「第N集」标签：以 ref.mediaType 为准（详情已判定形态），
+           不能用 eps.length>1 —— 电影可能被拆成 2 个分片。 */
+        var epLabel = str(ref.mediaType) === "movie" ? "" : epTitle;
 
-        var res = await ctx.http.get(baseUrl(ctx) + "/play/" + vurlId, { timeout: 25000 });
-        check(res);
-        var html = typeof res.data === "string" ? res.data : "";
-        if (!html && res.data && typeof res.data.text === "string") html = res.data.text;
-        var m = html.match(/data-hls="([^"]+)"/);
-        if (!m) return [];
-        var url = m[1].replace(/&amp;/g, "&");
-        var rm = html.match(/data-res="([^"]+)"/);
-        var label = (rm ? rm[1] + "P" : "高清") + (epLabel ? " · " + epLabel : "");
-        var out = [];
-        // 线路一：源站直连（零中转、不消耗 Worker 额度）
-        var direct = decodePlayUrl(url);
-        if (direct) {
+        var play = await apiGet(ctx, "/play/" + vurlId);
+        var lines = asArray(play && play.list);
+
+        /* 兜底：没拿到线路且 ref 不是影片级 ⇒ 把 id 当 vodId 再解析一次
+           （覆盖「ref 没打包元数据、只有裸 vodId」的历史条目） */
+        if (!lines.length && !packed) {
+          try {
+            var cat2 = await apiGet(ctx, "/catalog/" + id);
+            var eps2 = asArray(cat2 && cat2.list);
+            if (eps2.length) {
+              var pickEp = eps2[0];
+              for (var k = 0; k < eps2.length; k++) { if (want && num(eps2[k].n) === want) { pickEp = eps2[k]; break; } }
+              vurlId = digits(pickEp.id) || id;
+              var play2 = await apiGet(ctx, "/play/" + vurlId);
+              lines = asArray(play2 && play2.list);
+              if (str(ref.mediaType) !== "movie") epLabel = pick(pickEp.title);
+            }
+          } catch (err2) { /* 拿不到就按空结果返回 */ }
+        }
+        if (!lines.length) return [];
+
+        /* 按清晰度从高到低，同清晰度去重；每档一条线路，播放器 UA 直连源站 */
+        lines.sort(function (a, b) { return num(b.resolution) - num(a.resolution); });
+        var seen = {}, out = [], idx = 0;
+        for (var n = 0; n < lines.length; n++) {
+          var ln = lines[n];
+          var res = num(ln.resolution);
+          var key = res ? String(res) : "auto";
+          if (seen[key]) continue;
+          seen[key] = 1;
+          idx++;
           out.push({
-            id: "direct-" + vurlId,
-            name: "线路一 · " + label + "（直连）",
-            description: "源站直连，不经过中转",
-            url: direct,
+            id: "gz-" + vurlId + "-" + (res || "auto"),
+            name: "线路" + idx + " · " + (res ? res + "P" : "高清") + (epLabel ? " · " + epLabel : ""),
+            description: pick(ln.name, "源站直连"),
+            url: ln.url,
+            headers: { "User-Agent": GZ_PLAY_UA },
             player: "system",
           });
         }
-        // 线路二：HLS 规范化代理（源站异常/UA 被拦时兜底）
-        try {
-          out.push({
-            id: "gzhls-" + vurlId,
-            name: (direct ? "线路二" : "线路一") + " · " + label + "（代理兜底）",
-            description: "HLS 代理线路",
-            url: HLS_PROXY + "/p/" + b64u(url) + ".m3u8",
-            player: "system",
-          });
-        } catch (e) {}
         return out;
       },
     },
