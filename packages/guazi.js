@@ -13,7 +13,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.0.4";
+var VERSION = "2.1.0";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "play.tv";
 
@@ -651,8 +651,6 @@ var GZ_UA = "Phenomara/1 CFNetwork/3896.200.61 Darwin/27.2.0";
 var GZ_PLAY_UA = "AppleCoreMedia/1.0.0.24A5390f (iPhone; U; CPU OS 27_0 like Mac OS X; zh_cn)";
 var GZ_KEY = "aaaabbbbccccdddd", GZ_IV = "1111222233334444";
 var GZ_SALT = "&ffddffujhjhgvdvdvdz4Y!s!2br";
-/* 服务端真实下发的 keys 原文，仅用于离线自检 RSA 解密链路 */
-var DIAG_KEYS_SAMPLE = "JFZUd8mqgXZd2CDftn4RtskUusUSZV7ZVq5/cPoe1Axt6Fm2lCNvQQf97lDO/YVQy5XHh2BixjQxKgyGhOVaG1qkLdvg/SOjzf+Tt4DT+bUrFqPEVzWgrLcUHt59Ytj4gcGumx9gtG8FQVxUJnGsDOx7XWcZvvmaN1VcE5jhbUQ=";
 var GZ_APPVER = "2026033001", GZ_APIVER = "3.0.6.3";
 var GZ_PKGNAME = "com.jfm202203", GZ_CODE = "GZ0520";
 var GZ_PUB = "-----BEGIN PUBLIC KEY-----MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCWJafJAdhTPWMrNpbmlk672o06smRwxe1LoHjy2XbLRaKIXfQJWgJTBhLH4qUIPMmpnIKQYqjMLTrJhwG5Bwsd3/15YHdL7eWad7lpomF5doOQmmexK2+gSBHmCOhXeumhrOD63vx8ERepxR6UCxTi5b5fZmqMdbLk45IW39mn6wIDAQAB-----END PUBLIC KEY-----";
@@ -672,7 +670,7 @@ var GZ_THIRD_AES = { key: "m4nQCskrndxTCULX", iv: "92ilxgNlcweTTfvG" };
    官方的红果包（App 内实测可用）用「两参 + body 传对象」，bangumi 用「三参 + body 字符串」。
    这里按顺序试，第一个能解出响应包络的形态锁定下来，之后不再试探。 */
 var GZ_SHAPES = ["obj2", "str2", "obj2mini", "str3"];
-var GZ_STATE = { host: "", token: "", tid: "", dev: "", style: "", swaps: 0 };
+var GZ_STATE = { host: "", token: "", tid: "", dev: "", style: "" };
 var GZ_KEYS_CACHE = "";
 var GZ_REMOTE_CACHE = null;
 
@@ -724,7 +722,6 @@ function gzMiniHeaders() {
 }
 
 async function gzPostShape(ctx, url, bodyStr, shape) {
-  var t0 = Date.now();
   var res;
   if (shape === "obj2" || shape === "obj2mini") {
     var hd = shape === "obj2mini" ? gzMiniHeaders() : gzHeaders();
@@ -734,7 +731,6 @@ async function gzPostShape(ctx, url, bodyStr, shape) {
   } else {
     res = await ctx.http.post(url, { headers: gzHeaders(), body: bodyStr, timeoutMs: 20000 });
   }
-  gzLog(ctx, shape + " " + (Date.now() - t0) + "ms status=" + (res && res.status) + " " + url.replace(/^https:\/\//, "").slice(0, 56));
   return res;
 }
 
@@ -755,7 +751,6 @@ async function gzPostRaw(ctx, url, bodyStr) {
       /* 能解析但没有加密包络、code 也不是 200：多半这个形态的 body 没送到，
          记下第一个错误包络（含服务端原话），继续试下一个形态 */
       if (obj && !best) best = obj;
-      gzLog(ctx, order[i] + " 未通过 code=" + (obj ? obj.code : "null"));
     } catch (e) {
       if (!firstErr) firstErr = e;
       gzLog(ctx, order[i] + " 异常：" + ((e && e.message) || e));
@@ -788,7 +783,6 @@ async function gzLoginPass(ctx, host) {
   for (var i = 0; i < paths.length; i++) {
     try {
       var obj = await gzPostRaw(ctx, host + paths[i], gzPayload({ new_key: dev, old_key: dev }));
-      gzLog(ctx, "login " + paths[i].slice(-20) + " code=" + (obj && obj.code));
       if (obj && num(obj.code) === 200 && obj.data && obj.data.token) {
         GZ_STATE.token = str(obj.data.token);
         GZ_STATE.tid = str(obj.data.token_id);
@@ -799,20 +793,10 @@ async function gzLoginPass(ctx, host) {
   return false;
 }
 
-/* 运行时的 post 形态在「两参 options」与「三参 body」之间不统一：
- * 官方 hongguo/ddys 用前者，bangumi 与文档用后者，央视频那次两种都失败（pitfall #21/#22）。
- * 这里以鉴权结果为判据自适应：哪种形态能拿到 token 就用哪种，之后不再试探。 */
+/* 登录：gzPostRaw 内部已按候选形态逐个试，这里只需按两个入口各试一次。
+ * 两个入口都失败才算真失败（新设备首次可能 signIn 报「不存在」）。 */
 async function gzLogin(ctx, host) {
-  if (await gzLoginPass(ctx, host)) return true;
-  if (GZ_STATE.style !== "three") {
-    GZ_STATE.style = "three";
-    if (await gzLoginPass(ctx, host)) return true;
-  }
-  if (GZ_STATE.style !== "options") {
-    GZ_STATE.style = "options";
-    if (await gzLoginPass(ctx, host)) return true;
-  }
-  return false;
+  return await gzLoginPass(ctx, host);
 }
 function gzHosts(ctx) {
   var out = [];
@@ -1147,7 +1131,7 @@ definePackage({
   title: "瓜子影视",
   version: VERSION,
   engine: 1,
-  description: "15 个独立榜单 + 全站播放，直连源站（不依赖任何中转/Worker）：周榜、流媒体新片、搜索、详情、选集与 HLS 直链播放",
+  description: "15 个独立榜单 + 全站播放：周榜、流媒体新片、搜索、详情、选集与 HLS 直链播放",
   icon: ICON,
   permissions: {
     /* 前缀通配（官方 danmu.js 同写法）覆盖站点轮换域名 + 用户自填域名；
@@ -1179,85 +1163,6 @@ definePackage({
   ],
   extensions: [
     /* ---------- 诊断（排查用；确认正常后可删） ---------- */
-    {
-      type: "widget",
-      id: "diag",
-      title: "诊断",
-      description: "逐项报告环境 / 连通 / 三种请求形态 / 鉴权 / 取数，并显示上游原始响应",
-      template: "poster-grid",
-      itemAspectRatio: 16 / 9,
-      load: async function (ctx) {
-        var out = [];
-        var t0 = Date.now();
-        function add(t, s) {
-          out.push({ ref: { source: "custom", id: "diag:" + out.length }, title: t, subtitle: String(s).slice(0, 400), mediaType: "movie" });
-        }
-        function err(e) { return String((e && (e.message || e.reason)) || e); }
-        /* 把一次响应摊平成可读文本：优先取 data，其次整个响应 */
-        function raw(res) {
-          if (!res) return "null";
-          var body = res.data !== undefined ? res.data : res;
-          if (typeof body === "string") return "str:" + body.slice(0, 260);
-          try { return "obj:" + JSON.stringify(body).slice(0, 260); } catch (e) { return "obj(不可序列化)"; }
-        }
-        var hasKeys = gzHasEnvelope;
-        var H = null;
-        try { H = gzHeaders(); } catch (e) { H = null; }
-        add("① 环境", "post=" + (ctx && ctx.http ? typeof ctx.http.post : "无") +
-          " get=" + (ctx && ctx.http ? typeof ctx.http.get : "无") +
-          " setTimeout=" + (typeof setTimeout) + " Promise=" + typeof Promise +
-          " 头数=" + (H ? Object.keys(H).length : "构造失败"));
-        try {
-          var tg = Date.now();
-          var rg = await ctx.http.get("https://api.sef5w7.com/domain/check", { timeoutMs: 8000 });
-          add("② GET 连通 " + (Date.now() - tg) + "ms", "status=" + (rg && rg.status) + " " + raw(rg));
-        } catch (e) { add("② GET 连通", "异常：" + err(e)); }
-        var u = "https://api.sef5w7.com/App/NewDiscover/getList";
-        var p = { cateId: "148", page: 1, pageSize: 10 };
-        function shapeRow(name, shape) {
-          return (async function () {
-            try {
-              var ts = Date.now();
-              var rs = await gzPostShape(ctx, u, gzPayload(p), shape);
-              add(name + " " + (Date.now() - ts) + "ms", "status=" + (rs && rs.status) + " keys=" + hasKeys(rs) + " " + raw(rs));
-            } catch (e) { add(name, "异常：" + err(e)); }
-          })();
-        }
-        await shapeRow("③ 对象body", "obj2");
-        await shapeRow("④ 字符串body", "str2");
-        await shapeRow("⑤ 三参body", "str3");
-        try {
-          var ta = Date.now();
-          var ok = await gzLogin(ctx, "https://api.sef5w7.com");
-          add("⑥ 鉴权 " + (Date.now() - ta) + "ms", (ok ? "成功 token=" + String(GZ_STATE.token).slice(0, 8) + "…" : "失败") + " 形态=" + GZ_STATE.style);
-        } catch (e) { add("⑥ 鉴权", "异常：" + err(e)); }
-        try {
-          var tr = Date.now();
-          var jr = await apiGet(ctx, "/rank/148", { page: 1, size: 10 });
-          add("⑦ 榜单接口 " + (Date.now() - tr) + "ms", "条目=" + asArray(jr && jr.list).length);
-        } catch (e) { add("⑦ 榜单接口", "异常：" + err(e)); }
-        /* 密码学自检：全部离线。RSA 用一段服务端真实下发的 keys 原文来验证
-           （本地 rsaEncrypt→rsaDecrypt 往返本来就不成立，不能当判据）。 */
-        try {
-          var cs = [];
-          var aesOK = false, rsaOK = false, md5OK = false;
-          try {
-            var ct = GxCrypto.aesEncryptHex('{"a":1}', GZ_KEY, GZ_IV);
-            aesOK = GxCrypto.aesDecryptHex(ct, GZ_KEY, GZ_IV) === '{"a":1}';
-          } catch (e) { cs.push("aes:" + err(e)); }
-          try {
-            var ai = JSON.parse(GxCrypto.rsaDecrypt(DIAG_KEYS_SAMPLE, GZ_PRIV));
-            rsaOK = !!(ai && String(ai.key).length === 16 && String(ai.iv).length === 16);
-          } catch (e) { cs.push("rsa:" + err(e)); }
-          try { md5OK = String(GxCrypto.md5("abc")).toLowerCase() === "900150983cd24fb0d6963f7d28e17f72"; }
-          catch (e) { cs.push("md5:" + err(e)); }
-          add("⑨ 密码学自检", "aes=" + aesOK + " rsa=" + rsaOK + " md5=" + md5OK +
-            " keys长度=" + String(gzKeysBlob()).length + (cs.length ? " " + cs.join(" ") : ""));
-        } catch (e) { add("⑨ 密码学自检", "异常：" + err(e)); }
-        add("⑩ 总耗时", (Date.now() - t0) + "ms · 域名=" + (GZ_STATE.host || "未确定"));
-        return out;
-      },
-    },
     /* ---------- Widget：瓜子影视 ---------- */
     {
       type: "widget",
