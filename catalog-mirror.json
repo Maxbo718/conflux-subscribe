@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Conflux 官方扩展全集（镜像）",
   "description": "ConfluxOne/ExtensionSamples 全部扩展现已收录，包体直连官方仓库，目录与版本号每日自动跟随官方更新。",
-  "updated": "2026-11-05T01:27:45Z",
+  "updated": "2026-11-05T09:29:22Z",
   "packages": [
     {
       "id": "conflux.bangumi",
@@ -87,7 +87,7 @@
       "title": "豆瓣",
       "description": "豆瓣电影与剧集：正在热映、Top250、一周口碑榜、热门电影与剧集、搜索和详情（数据来自豆瓣，非官方接口）。",
       "author": "Anonymous",
-      "version": "1.1.4",
+      "version": "1.1.6",
       "engine": 1,
       "changelog": "",
       "types": [
@@ -103,7 +103,7 @@
       "title": "红果短剧",
       "description": "红果短剧（hongguoduanju.com）：精选轮播、热播推荐、热播榜、分类浏览、搜索、详情与官网公开线路播放。",
       "author": "Anonymous",
-      "version": "1.1.7",
+      "version": "1.1.8",
       "engine": 1,
       "changelog": "",
       "types": [
@@ -114,6 +114,23 @@
         "playback"
       ],
       "url": "https://raw.githubusercontent.com/ConfluxOne/ExtensionSamples/main/others/hongguo.js"
+    },
+    {
+      "id": "conflux.hongguo.app",
+      "title": "红果短剧 · App 线路",
+      "description": "红果短剧（hongguoduanju.com）：官网数据 + 本地 relay 解析 App 线路，用 options.decryptionKey 播放全部分集；relay 不可用时回退官网公开线路。",
+      "author": "Anonymous",
+      "version": "1.0.0",
+      "engine": 1,
+      "changelog": "",
+      "types": [
+        "widget",
+        "list",
+        "search",
+        "detail",
+        "playback"
+      ],
+      "url": "https://raw.githubusercontent.com/ConfluxOne/ExtensionSamples/main/others/hongguo-app/hongguo-app.js"
     },
     {
       "id": "conflux.theintrodb",
