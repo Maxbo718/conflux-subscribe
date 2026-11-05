@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-05T10:54:37Z",
+  "updated": "2026-11-05T11:07:49Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -24,13 +24,13 @@
     {
       "id": "conflux.hgdiag",
       "title": "黄果封面诊断",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "engine": 1,
       "types": [
         "widget"
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/hgdiag.js",
-      "description": "临时诊断包：验证封面能否在包内解密（验完即删）",
+      "description": "临时诊断包，验完即删",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png",
       "changelog": "0.1.0：临时诊断包，用于验证运行时能否取二进制、能否显示 data: 封面。验完即删。"
     },
