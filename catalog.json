@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-05T11:13:57Z",
+  "updated": "2026-11-07T00:46:23Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -24,7 +24,7 @@
     {
       "id": "conflux.huangguo",
       "title": "黄果短剧",
-      "version": "3.3.6",
+      "version": "3.3.7",
       "engine": 1,
       "types": [
         "widget",
@@ -37,7 +37,7 @@
       "description": "提供黄果 AI 短剧、漫剧、换脸与魔改视频浏览、搜索、选集与全集流畅播放",
       "author": "Conflux Community",
       "icon": "https://huangguoai.com/apple-touch-icon.png",
-      "changelog": "3.3.6：列表导航栏接入搜索框；跨库匹配增加集数校验，避免同名不同片串集。"
+      "changelog": "3.3.7：适配站方新版 POST 分集取流，透传动态 CDN 请求头；修复分集完整网址重复拼接域名。保留旧接口兼容，不缓存签名播放地址。"
     }
   ]
 }

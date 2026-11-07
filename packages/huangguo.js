@@ -138,6 +138,45 @@ async function manifestDuration(ctx, url) {
   }
 }
 
+/* 站方新版播放器：起播/切集均 POST，即取即用，不缓存签名。 */
+async function currentPlayback(ctx, base, id, ep) {
+  if (!ctx.http || typeof ctx.http.post !== "function") return null;
+  var endpoint = base + "/api/videos/" + encodeURIComponent(id) + "/episodes/" + ep + "/playback";
+  var res;
+  try {
+    // 与官方 hongguo 样例一致：两参，body 在 options 内。
+    res = await ctx.http.post(endpoint, {
+      body: "{}",
+      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": base + "/video/" + id + "/" },
+      timeoutMs: 12000
+    });
+  } catch (e) { fail("unavailable", "黄果取流请求失败，请稍后重试", true); }
+  var envelope = check(res, true);
+  if (!envelope) return null;
+  var p = envelope.data || envelope;
+  if (p.manifest_method !== "GET" || String(p.id) !== String(id) || Number(p.ep) !== ep || !p.streams) {
+    fail("unavailable", "黄果取流返回无效或集数不匹配", true);
+  }
+  var headers = { "User-Agent": "Mozilla/5.0", "Referer": base + "/" };
+  var cdn = p.cdn || {};
+  if (cdn.m3u8Enabled && cdn.authKey === "x-cdn-auth" && cdn.authValue && cdn.app) {
+    headers[cdn.authKey] = String(cdn.authValue);
+    headers["x-cdn-app"] = String(cdn.app);
+  }
+  var lines = [];
+  var codecs = ["main", "hevc"];
+  for (var i = 0; i < codecs.length; i++) {
+    var key = codecs[i], url = normalizeHtml(p.streams[key]);
+    if (!/^https?:\/\//i.test(url) || !/\.m3u8(?:[?#]|$)/i.test(url)) continue;
+    if (lines.length && lines[0].url === url) continue;
+    lines.push({ id: "huangguo." + id + "." + ep + (key === "hevc" ? ".hevc" : ""),
+      name: "第 " + ep + " 集" + (key === "hevc" ? " · HEVC" : ""), url: url,
+      description: "黄果短剧 · 即时取流", player: "system", headers: headers });
+  }
+  if (!lines.length) fail("unavailable", "黄果暂未返回该集播放地址", true);
+  return lines;
+}
+
 async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
   var base = getApiBase(ctx);
   var ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15";
@@ -146,9 +185,10 @@ async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
   var path = "/video/" + encodeURIComponent(vid) + "/";
   if (epNum && epNum > 1) path = "/video/" + encodeURIComponent(vid) + "/ep-" + epNum + "/";
   if (pageUrl) path = pageUrl;   // ref 自带分集页地址时优先，地址即锁定集数
+  var pageTarget = /^https?:\/\//i.test(path) ? path : base + path;
   var html = "";
   try {
-    var r = await ctx.http.get(base + path, {
+    var r = await ctx.http.get(pageTarget, {
       headers: { "User-Agent": ua, Accept: "text/html" }, timeoutMs: 20000,
     });
     html = normalizeHtml((r && r.data) || "");
@@ -194,7 +234,7 @@ async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
 
 var DEFAULT_API_BASE = "https://huangguoai.com";
 var DEFAULT_COVER_PROXY = "https://hgpic.113210833.xyz/";
-var VERSION = "3.3.6";
+var VERSION = "3.3.7";
 
 // base64url 编码（纯 JS，避免依赖 btoa 的可用性）
 function b64u(str) {
@@ -1065,6 +1105,9 @@ definePackage({
             fromMemory = memo > 0;
           }
         }
+
+        var freshLines = await currentPlayback(ctx, getApiBase(ctx), id, epNum);
+        if (freshLines) return freshLines;
 
         // 先拿接口数据：既用于第1集兜底，也提供该集的标准时长（用于校验页面候选）
         var json = await apiGet(ctx, "/api/videos/" + id, {}, { allow404: true });
