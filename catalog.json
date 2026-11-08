@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-08T06:51:25Z",
+  "updated": "2026-11-08T07:34:45Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -42,7 +42,7 @@
     {
       "id": "conflux.douyin",
       "title": "抖音直播",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "engine": 1,
       "types": [
         "widget",
@@ -55,7 +55,7 @@
       "description": "抖音公开直播：14 个分类组、230 个原插件子分类选项；房间号与含房间号分享文本查找、多清晰度 HLS。",
       "author": "Angel Live / Conflux移植",
       "icon": "https://live.douyin.com/favicon.ico",
-      "changelog": "1.0.0：移植 Angel Live 抖音 2.0.58 的匿名直播浏览、详情和 HLS 取流；合并重复热门/聊天分类。支持房间号及含房间号分享文本查找。不含关键词搜索、扫码登录或实时弹幕；Conflux 真机播放待验证。"
+      "changelog": "1.0.1：修正小组件分页令牌缺少type及空页next为null的协议错误；纠正聊天、音乐组件尺寸。HTTP、签名、列表与播放逻辑不变；小组件修后真机显示待确认。"
     }
   ]
 }
