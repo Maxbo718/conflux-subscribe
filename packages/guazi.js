@@ -14,7 +14,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.2.0";
+var VERSION = "2.2.1";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
@@ -259,6 +259,8 @@ function check(res, allow404) {
 }
 
 var RETRYABLE_CODES = { rate_limited: true, unavailable: true };
+/* 站方付费墙原话是「开通会员后观看」；不绕过，只如实说明（坑：旧版会误显示“无可播放资源”） */
+var PAYWALL_MSG = "站方会员专享：这部片需在瓜子开通会员后才能播放";
 function fail(msg, code) {
   code = code || "internal";
   if (typeof ExtensionError === "function") {
@@ -911,6 +913,8 @@ function normRows(rows) {
       score: trim(r.score || r.vod_scroe),
       total: total,
       desc: pick(r.sub_title || r.vod_remarks),
+      /* pay_has_paid_episode=1 ⇒ 站方该片含会员付费集（实测 tid=75 全库如此） */
+      paid: str(r.pay_has_paid_episode) === "1",
     });
   }
   return out;
@@ -953,7 +957,8 @@ async function apiGet(ctx, path, query, opts) {
       var e = asObject(raw[i]);
       if (!e.id) continue;
       var n = num(e.sort) || eps.length + 1;
-      eps.push({ id: digits(e.id), n: n, title: pick(e.title, "第 " + n + " 集") });
+      /* pay_playable：实测免费集为 "1"、会员集为 "0"，可在请求播放前就判定 */
+      eps.push({ id: digits(e.id), n: n, title: pick(e.title, "第 " + n + " 集"), pay: str(e.pay_playable) });
     }
     return { list: eps };
   }
@@ -1023,6 +1028,7 @@ function listItem(ctx, row) {
   var bits = [];
   if (year) bits.push(year.slice(0, 4));
   if (count > 0) bits.push(count + " 集");
+  if (d.paid) bits.push("会员专享");
   if (bits.length) item.subtitle = bits.join(" · ");
   return item;
 }
@@ -2528,13 +2534,23 @@ definePackage({
             if (!chosen) chosen = eps[0];
             vurlId = digits(chosen.id) || id;
             epTitle = pick(chosen.title);
+            /* 会员集：pay_playable="0" ⇒ 站方限会员，直接给准确提示，
+               既不发注定失败的播放请求，也不谎报“无可播放资源”。 */
+            if (chosen.pay === "0") fail(PAYWALL_MSG, "not_found");
           }
         }
         /* 电影不挂「第N集」标签：以 ref.mediaType 为准（详情已判定形态），
            不能用 eps.length>1 —— 电影可能被拆成 2 个分片。 */
         var epLabel = str(ref.mediaType) === "movie" ? "" : epTitle;
 
-        var play = await apiGet(ctx, "/play/" + vurlId);
+        var play;
+        try {
+          play = await apiGet(ctx, "/play/" + vurlId);
+        } catch (e1) {
+          /* 兜底：集数表没标 pay 时（裸 vurlId 引用）靠上游原话识别会员限制 */
+          if (/会员|付费|购买|充值/.test(str(e1 && e1.message))) fail(PAYWALL_MSG, "not_found");
+          throw e1;
+        }
         var lines = asArray(play && play.list);
 
         /* 兜底：没拿到线路且 ref 不是影片级 ⇒ 把 id 当 vodId 再解析一次
@@ -2547,6 +2563,7 @@ definePackage({
               var pickEp = eps2[0];
               for (var k = 0; k < eps2.length; k++) { if (want && num(eps2[k].n) === want) { pickEp = eps2[k]; break; } }
               vurlId = digits(pickEp.id) || id;
+              if (pickEp.pay === "0") fail(PAYWALL_MSG, "not_found");
               var play2 = await apiGet(ctx, "/play/" + vurlId);
               lines = asArray(play2 && play2.list);
               if (str(ref.mediaType) !== "movie") epLabel = pick(pickEp.title);
