@@ -14,7 +14,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.2.1";
+var VERSION = "2.2.2";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
@@ -1045,6 +1045,8 @@ function episodesOf(detail, vodId, cover) {
       title: pick(e.title, "第 " + n + " 集"),
       ref: { source: "custom", id: digits(e.id), mediaType: "movie" },
     };
+    /* pay_playable="0" ⇒ 该集站方限会员（实测免费集为 "1"） */
+    if (str(e.pay) === "0") ep.paywalled = true;
     /* 分集剧照：站方无独立剧照，按 pitfall #1 铁律双通道注入（stills + 单集全量图字段） */
     if (cover) {
       ep.image = cover;
@@ -2471,6 +2473,12 @@ definePackage({
         } else {
           bits.push(eps.length + " 集");
         }
+        /* 会员集提示：详情页先说明，别等点了播放才报错（站方 300「开通会员后观看」） */
+        var payAll = eps.length > 0, paySome = false;
+        for (var pi = 0; pi < eps.length; pi++) {
+          if (eps[pi].paywalled) paySome = true; else payAll = false;
+        }
+        if (paySome) bits.push(payAll ? "会员专享" : "含会员集");
         out.subtitle = bits.join(" · ");
 
         /* 分集剧照铁律（pitfall #1）：顶层 stills 与分集等长 */
