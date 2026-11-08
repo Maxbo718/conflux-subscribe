@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-08T15:37:56Z",
+  "updated": "2026-11-08T17:05:45Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -42,7 +42,7 @@
     {
       "id": "conflux.douyin",
       "title": "抖音直播",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "engine": 1,
       "types": [
         "widget",
@@ -52,10 +52,10 @@
         "playback"
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/douyin.js",
-      "description": "新增抖音直播聚合分类，分页汇总现有218个分区接口；保留14分类组、230子选项、房间号查找及多清晰度HLS。",
+      "description": "新增关键词搜索直播间（主播昵称/直播标题），保留抖音直播聚合分类、14分类组与多清晰度HLS。",
       "author": "Angel Live / Conflux移植",
       "icon": "https://live.douyin.com/favicon.ico",
-      "changelog": "1.1.0：新增名为抖音直播的聚合组件，分区轮转、房间去重、失败保留页码重试；原14组件及HTTP/签名/播放核心不变。聚合现有源分区，非全站完整目录；新增聚合页真机待验。"
+      "changelog": "1.2.0：新增关键词搜索（需登录Cookie；搜索不附带签名以避开抖音验证拦截，遇验证自动重试一次）。1.1.0：新增聚合分类。真机待验。"
     }
   ]
 }
