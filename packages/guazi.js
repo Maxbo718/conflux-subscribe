@@ -14,7 +14,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.2.2";
+var VERSION = "2.2.3";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
@@ -1028,7 +1028,11 @@ function listItem(ctx, row) {
   var bits = [];
   if (year) bits.push(year.slice(0, 4));
   if (count > 0) bits.push(count + " 集");
-  if (d.paid) bits.push("会员专享");
+  if (d.paid) {
+    /* 仅改变展示标题；ref 中的干净片名不变。存在付费集≠全片受限。 */
+    item.title = "【含会员集】" + item.title;
+    bits.push("含会员集");
+  }
   if (bits.length) item.subtitle = bits.join(" · ");
   return item;
 }
@@ -1046,7 +1050,11 @@ function episodesOf(detail, vodId, cover) {
       ref: { source: "custom", id: digits(e.id), mediaType: "movie" },
     };
     /* pay_playable="0" ⇒ 该集站方限会员（实测免费集为 "1"） */
-    if (str(e.pay) === "0") ep.paywalled = true;
+    if (str(e.pay) === "0") {
+      ep.paywalled = true;
+      /* 官方红果已验证的原生 VIP 标签；内部 paywalled 不会自动显示。 */
+      ep.badges = [{ title: "VIP", color: "#F5C518" }];
+    }
     /* 分集剧照：站方无独立剧照，按 pitfall #1 铁律双通道注入（stills + 单集全量图字段） */
     if (cover) {
       ep.image = cover;
@@ -2430,7 +2438,7 @@ definePackage({
       id: "main",
       title: "瓜子影视详情",
       accepts: { sources: ["custom"] },
-      cache: { ttlSeconds: 600 },
+      cache: { ttlSeconds: 0 },
       load: async function (ctx, input) {
         var ref = (input && input.ref) || {};
         var parsed = unpackRef(ref.id);
@@ -2478,7 +2486,17 @@ definePackage({
         for (var pi = 0; pi < eps.length; pi++) {
           if (eps[pi].paywalled) paySome = true; else payAll = false;
         }
-        if (paySome) bits.push(payAll ? "会员专享" : "含会员集");
+        if (paySome) {
+          var membership = payAll ? "会员专享" : "含会员集";
+          /* 显示标题承担电影提示，不依赖宿主一定展示 subtitle 或异常消息。 */
+          out.title = "【" + membership + "】" + out.title;
+          var notice = payAll
+            ? "站方会员专享：当前全部集数需在瓜子开通会员后观看。"
+            : "本片含站方会员集；免费集可正常播放，受限集需在瓜子开通会员后观看。";
+          out.description = notice + (out.description ? "\n\n" + str(out.description) : "");
+          out.overview = notice + (out.overview ? "\n\n" + str(out.overview) : "");
+          bits.push(membership);
+        }
         out.subtitle = bits.join(" · ");
 
         /* 分集剧照铁律（pitfall #1）：顶层 stills 与分集等长 */
@@ -2576,7 +2594,10 @@ definePackage({
               lines = asArray(play2 && play2.list);
               if (str(ref.mediaType) !== "movie") epLabel = pick(pickEp.title);
             }
-          } catch (err2) { /* 拿不到就按空结果返回 */ }
+          } catch (err2) {
+            /* 真正无资源保留旧兼容；会员拒绝不可吞成空数组。 */
+            if (/会员|付费|购买|充值/.test(str(err2 && err2.message))) fail(PAYWALL_MSG, "not_found");
+          }
         }
         if (!lines.length) return [];
 

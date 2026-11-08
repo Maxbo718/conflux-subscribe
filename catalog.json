@@ -7,7 +7,7 @@
     {
       "id": "conflux.guazi",
       "title": "瓜子影视",
-      "version": "2.2.2",
+      "version": "2.2.3",
       "engine": 1,
       "types": [
         "widget",
@@ -19,7 +19,7 @@
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/guazi.js",
       "description": "真实全类型片库 + 11 已命名主片库 / 分类39 / 28 子分类 + 原榜单：跨库搜索、实时分页、详情与 HLS 播放",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png",
-      "changelog": "2.2.2：详情页与列表都标注“会员专享/含会员集”，播放失败直接提示“站方会员专享”，不再显示误导性的“无可播放资源”。实测 tid=75 AI剧场整库为站方付费集，按站方 pay_playable 判定，不绕过会员授权。2.2.1/2.2.0：全类型真实分页片库 + 11 主库 / 分类39 / 28 子分类 + 跨库搜索。"
+      "changelog": "2.2.3：会员说明前置到实际展示标题，并同步简介字段；付费分集使用官方 VIP 徽标。仅改变展示片名，不污染引用中的干净片名；详情不缓存，修复裸 ID 兜底吞掉会员错误。原生播放按钮仍可能统一显示无资源，不再承诺异常消息必弹窗。2.2.2 的副标题/内部字段不是会员 UI 验收依据；本版新增真实字段及语义测试，新提示真机显示仍需用户确认。"
     },
     {
       "id": "conflux.huangguo",
