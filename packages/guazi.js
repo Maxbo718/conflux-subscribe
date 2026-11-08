@@ -3,6 +3,7 @@
  * engine 1。加密 / 签名 / 域名轮换全部在本包内完成，请求直连站点 API：
  *   鉴权  POST /App/Authentication/Device/signIn | signUp
  *   榜单  POST /App/NewDiscover/getList     {cateId, page, pageSize}
+ *   片库  POST /App/IndexList/indexList    {tid, sub, area, year, sort, page, pageSize}
  *   搜索  POST /App/Index/findMoreVod       {keywords, order_val}
  *   目录  POST /App/Resource/Vurl/show      {vod_d_id, vurl_cloud_id:"2"}
  *   播放  POST /App/Resource/Vod/vurlDetail {vurl_id} → 源站 m3u8 直链
@@ -13,7 +14,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.1.1";
+var VERSION = "2.2.0";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
@@ -1078,6 +1079,246 @@ function loadMix(ctx) {
   });
 }
 
+var LIBRARY_TYPES = [
+  {
+    "id": "1",
+    "name": "电影",
+    "subs": [
+      {
+        "id": "5",
+        "name": "动作片"
+      },
+      {
+        "id": "29",
+        "name": "悬疑片"
+      },
+      {
+        "id": "6",
+        "name": "喜剧片"
+      },
+      {
+        "id": "7",
+        "name": "爱情片"
+      },
+      {
+        "id": "8",
+        "name": "科幻片"
+      },
+      {
+        "id": "9",
+        "name": "恐怖片"
+      },
+      {
+        "id": "10",
+        "name": "剧情片"
+      },
+      {
+        "id": "11",
+        "name": "战争片"
+      },
+      {
+        "id": "36",
+        "name": "动画片"
+      },
+      {
+        "id": "20",
+        "name": "纪录片"
+      },
+      {
+        "id": "38",
+        "name": "灾难片"
+      },
+      {
+        "id": "61",
+        "name": "犯罪片"
+      }
+    ]
+  },
+  {
+    "id": "2",
+    "name": "电视剧",
+    "subs": [
+      {
+        "id": "12",
+        "name": "国产剧"
+      },
+      {
+        "id": "13",
+        "name": "香港剧"
+      },
+      {
+        "id": "14",
+        "name": "台湾剧"
+      },
+      {
+        "id": "15",
+        "name": "欧美剧"
+      },
+      {
+        "id": "16",
+        "name": "日本剧"
+      },
+      {
+        "id": "17",
+        "name": "韩国剧"
+      },
+      {
+        "id": "18",
+        "name": "海外剧"
+      },
+      {
+        "id": "19",
+        "name": "泰国剧"
+      },
+      {
+        "id": "69",
+        "name": "新加坡"
+      }
+    ]
+  },
+  {
+    "id": "4",
+    "name": "动漫",
+    "subs": [
+      {
+        "id": "30",
+        "name": "中国动漫"
+      },
+      {
+        "id": "31",
+        "name": "日本动漫"
+      },
+      {
+        "id": "33",
+        "name": "欧美动漫"
+      }
+    ]
+  },
+  {
+    "id": "3",
+    "name": "综艺",
+    "subs": [
+      {
+        "id": "22",
+        "name": "大陆综艺"
+      },
+      {
+        "id": "23",
+        "name": "港台综艺"
+      },
+      {
+        "id": "24",
+        "name": "日韩综艺"
+      },
+      {
+        "id": "25",
+        "name": "欧美综艺"
+      }
+    ]
+  },
+  {
+    "id": "64",
+    "name": "短剧",
+    "subs": []
+  },
+  {
+    "id": "72",
+    "name": "音乐",
+    "subs": []
+  },
+  {
+    "id": "74",
+    "name": "AI漫剧",
+    "subs": []
+  },
+  {
+    "id": "73",
+    "name": "电影解说",
+    "subs": []
+  },
+  {
+    "id": "71",
+    "name": "体育解说",
+    "subs": []
+  },
+  {
+    "id": "70",
+    "name": "电竞解说",
+    "subs": []
+  },
+  {
+    "id": "75",
+    "name": "AI剧场",
+    "subs": []
+  },
+  {
+    "id": "39",
+    "name": "分类39",
+    "subs": []
+  }
+];
+/* ---------- 隐藏片库：与 NewDiscover 榜单分开，站方 IndexList 真分页 ---------- */
+var LIBRARY_PAGE_SIZE = 30;
+function libraryType(tid) {
+  for (var i = 0; i < LIBRARY_TYPES.length; i++) if (LIBRARY_TYPES[i].id === str(tid)) return LIBRARY_TYPES[i];
+  return null;
+}
+function librarySpec(refId) {
+  var m = /^list:library:(\d+):(\d+)$/.exec(str(refId));
+  if (!m) return null;
+  var t = libraryType(m[1]);
+  if (!t) return null;
+  var sub = m[2];
+  if (sub !== "0" && !asArray(t.subs).some(function (s) { return s.id === sub; })) return null;
+  return { tid: t.id, sub: sub, name: t.name };
+}
+function libraryPage(input) {
+  var p = input && input.page && input.page.page;
+  if (p === undefined || p === null) return 1;
+  var n = Number(p);
+  if (!isFinite(n) || n < 1 || Math.floor(n) !== n) fail("片库页码无效", "invalid_params");
+  if (n > 100) fail("站方片库分页最多 100 页，请使用搜索定位更早影片", "invalid_params");
+  return n;
+}
+async function fetchLibraryPage(ctx, spec, page) {
+  var data = await gzCall(ctx, "/App/IndexList/indexList", {
+    area: "0", year: "0", sort: "d_id", page: String(page), pageSize: String(LIBRARY_PAGE_SIZE),
+    tid: spec.tid, sub: spec.sub
+  }, true);
+  if (!data || !Array.isArray(data.list)) fail("瓜子片库返回了无效列表", "unavailable");
+  if (num(data.page) > 0 && num(data.page) !== page) fail("站方片库分页未前进，已停止重复加载", "unavailable");
+  var rows = normRows(data.list);
+  var total = num(data.total);
+  var size = num(data.pageSize) || LIBRARY_PAGE_SIZE;
+  var more = page < 100 && rows.length > 0 && (total > 0 ? page * size < total : rows.length >= size);
+  return { rows: rows, total: total, more: more };
+}
+function libraryItems(ctx, rows) {
+  var seen = {}, items = [];
+  rows.forEach(function (r) {
+    if (!r || !r.id || seen[r.id]) return;
+    seen[r.id] = true;
+    var it = listItem(ctx, r);
+    if (it) { it.intent = "detail"; items.push(it); }
+  });
+  return items;
+}
+async function loadLibrary(ctx, input, tid, sub, widget) {
+  var spec = librarySpec("list:library:" + tid + ":" + sub);
+  if (!spec) fail("瓜子片库分类不存在", "invalid_params");
+  var p = libraryPage(input), res = await fetchLibraryPage(ctx, spec, p);
+  var out = { items: libraryItems(ctx, res.rows) };
+  if (res.more) out.next = { type: "page", page: p + 1 };
+  return out;
+}
+async function loadAllLibrary(ctx, input) {
+  var p = libraryPage(input);
+  var res = await fetchLibraryPage(ctx, { tid: "0", sub: "0" }, p);
+  var out = { items: libraryItems(ctx, res.rows) };
+  if (res.more) out.next = { type: "page", page: p + 1 };
+  return out;
+}
+
 /* ---------- definePackage ---------- */
 /* 合并官方分类：单池并发 8，单类失败跳过，去重后按上映日期倒序。
    两级用法：widget 只聚合最近 3 个月（快），list 页聚合全部 48 类（约 900 部）。 */
@@ -1168,17 +1409,14 @@ definePackage({
       type: "widget",
       id: "all-videos",
       title: "瓜子影视",
-      description: "最近 3 个月新片速览 · 点开看全站 900+ 部",
+      description: "全类型片库（含隐藏分类）· 真实分页，不再限制为榜单精选",
       template: "poster-grid",
       header: "list",
       ref: { source: "custom", id: "list:all" },
       placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 3600 },
-      load: async function (ctx) {
-        var rows = await fetchRowsByCats(ctx, monthCats().slice(0, 3).map(function (c) { return c.id; }));
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadAllLibrary(ctx, input);
       },
     },
 
@@ -1507,6 +1745,609 @@ definePackage({
       },
     },
 
+    {
+      type: "widget",
+      id: "library-1",
+      title: "电影片库",
+      description: "完整电影片库 · 站方实时列表与分页",
+      template: "backdrop-rail",
+      families: ["extraLarge"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-5",
+      title: "动作片",
+      description: "完整动作片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:5" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "5");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-29",
+      title: "悬疑片",
+      description: "完整悬疑片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:29" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "29");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-6",
+      title: "喜剧片",
+      description: "完整喜剧片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:6" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "6");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-7",
+      title: "爱情片",
+      description: "完整爱情片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:7" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "7");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-8",
+      title: "科幻片",
+      description: "完整科幻片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:8" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "8");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-9",
+      title: "恐怖片",
+      description: "完整恐怖片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:9" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "9");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-10",
+      title: "剧情片",
+      description: "完整剧情片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:10" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "10");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-11",
+      title: "战争片",
+      description: "完整战争片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:11" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "11");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-36",
+      title: "动画片",
+      description: "完整动画片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:36" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "36");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-20",
+      title: "纪录片",
+      description: "完整纪录片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:20" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "20");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-38",
+      title: "灾难片",
+      description: "完整灾难片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:38" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "38");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-1-61",
+      title: "犯罪片",
+      description: "完整犯罪片片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:1:61" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "1", "61");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2",
+      title: "电视剧片库",
+      description: "完整电视剧片库 · 站方实时列表与分页",
+      template: "poster-pager",
+      families: ["extraLarge"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-12",
+      title: "国产剧",
+      description: "完整国产剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:12" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "12");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-13",
+      title: "香港剧",
+      description: "完整香港剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:13" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "13");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-14",
+      title: "台湾剧",
+      description: "完整台湾剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:14" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "14");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-15",
+      title: "欧美剧",
+      description: "完整欧美剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:15" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "15");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-16",
+      title: "日本剧",
+      description: "完整日本剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:16" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "16");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-17",
+      title: "韩国剧",
+      description: "完整韩国剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:17" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "17");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-18",
+      title: "海外剧",
+      description: "完整海外剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:18" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "18");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-19",
+      title: "泰国剧",
+      description: "完整泰国剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:19" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "19");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-2-69",
+      title: "新加坡",
+      description: "完整新加坡片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:2:69" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "2", "69");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-4",
+      title: "动漫片库",
+      description: "完整动漫片库 · 站方实时列表与分页",
+      template: "poster-ranked",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:4:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "4", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-4-30",
+      title: "中国动漫",
+      description: "完整中国动漫片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:4:30" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "4", "30");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-4-31",
+      title: "日本动漫",
+      description: "完整日本动漫片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:4:31" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "4", "31");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-4-33",
+      title: "欧美动漫",
+      description: "完整欧美动漫片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:4:33" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "4", "33");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-3",
+      title: "综艺片库",
+      description: "完整综艺片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:3:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "3", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-3-22",
+      title: "大陆综艺",
+      description: "完整大陆综艺片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:3:22" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "3", "22");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-3-23",
+      title: "港台综艺",
+      description: "完整港台综艺片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:3:23" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "3", "23");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-3-24",
+      title: "日韩综艺",
+      description: "完整日韩综艺片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:3:24" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "3", "24");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-3-25",
+      title: "欧美综艺",
+      description: "完整欧美综艺片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:3:25" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "3", "25");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-64",
+      title: "短剧片库",
+      description: "完整短剧片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:64:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "64", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-72",
+      title: "音乐片库",
+      description: "完整音乐片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:72:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "72", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-74",
+      title: "AI漫剧片库",
+      description: "完整AI漫剧片库 · 站方实时列表与分页",
+      template: "poster-pager",
+      families: ["extraLarge"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:74:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "74", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-73",
+      title: "电影解说片库",
+      description: "完整电影解说片库 · 站方实时列表与分页",
+      template: "backdrop-rail",
+      families: ["extraLarge"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:73:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "73", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-71",
+      title: "体育解说片库",
+      description: "完整体育解说片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:71:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "71", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-70",
+      title: "电竞解说片库",
+      description: "完整电竞解说片库 · 站方实时列表与分页",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:70:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "70", "0");
+      },
+    },
+    {
+      type: "widget",
+      id: "library-75",
+      title: "AI剧场片库",
+      description: "完整AI剧场片库 · 站方实时列表与分页",
+      template: "backdrop-rail",
+      families: ["extraLarge"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:75:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "75", "0");
+      },
+    },
+
+    /* 站方分类39：仅ID与数据已确认，尚无可靠原名，不臆造栏目标签。 */
+    {
+      type: "widget",
+      id: "library-39",
+      title: "分类39片库（原名未确认）",
+      description: "站方独立分类39 · 数据实时分页，栏目原名未确认",
+      template: "poster-grid",
+      families: ["small", "medium", "large"],
+      header: "list",
+      ref: { source: "custom", id: "list:library:39:0" },
+      placeholderData: PLACEHOLDER_RANK,
+      cache: { ttlSeconds: 1800 },
+      load: async function (ctx, input) {
+        return loadLibrary(ctx, input, "39", "0");
+      },
+    },
+
     /* ---------- 搜索 ---------- */
     {
       type: "search",
@@ -1539,11 +2380,14 @@ definePackage({
         var wanted = (RANK_IDS[params.rank] || CAT_IDS[params.rank])
           ? params.rank
           : (id.indexOf("list:cat:") === 0 ? CAT_ROUTE[id.slice("list:cat:".length)] : id.indexOf("list:rank:") === 0 ? id.slice("list:rank:".length) : "148");
-        if (id === "list:all") {
-          var allRows = await fetchAllRows(ctx);
-          var allItems = [];
-          allRows.forEach(function (r) { var it = listItem(ctx, r); if (it) allItems.push(it); });
-          return { items: allItems };
+        if (id === "list:all") return loadAllLibrary(ctx, input);
+        if (id.indexOf("list:library") === 0) {
+          var spec = librarySpec(id);
+          if (!spec) fail("瓜子片库分类不存在", "invalid_params");
+          return loadLibrary(ctx, input, spec.tid, spec.sub);
+        }
+        if (id.indexOf("list:cat:") === 0 && !CAT_ROUTE[id.slice("list:cat:".length)]) {
+          fail("瓜子分类不存在", "invalid_params");
         }
         if (wanted === "mix") {
           /* 混榜：与 widget 同一套混合逻辑 */
@@ -1602,7 +2446,7 @@ definePackage({
         var out = {
           /* mediaType 必须与分集数一致：多集=剧集(tv)，单集=电影(movie)。
              之前一律写 movie，导致 App 同时给出「标记本集/标记本季」两项菜单。 */
-          ref: { source: "custom", id: vodId, mediaType: isMovie ? "movie" : "tv" },
+          ref: { source: "custom", id: str(ref.id).indexOf("~") >= 0 ? str(ref.id) : vodId, mediaType: isMovie ? "movie" : "tv" },
           title: pick(meta.t, "瓜子影视 " + vodId),
         };
         if (cover) out.images = { poster: cover, detailPoster: cover, backdrop: cover };

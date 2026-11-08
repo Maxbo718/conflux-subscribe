@@ -7,7 +7,7 @@
     {
       "id": "conflux.guazi",
       "title": "瓜子影视",
-      "version": "2.1.1",
+      "version": "2.2.0",
       "engine": 1,
       "types": [
         "widget",
@@ -17,9 +17,9 @@
         "playback"
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/guazi.js",
-      "description": "15 个独立榜单 + 全站播放：周榜、流媒体新片、搜索、详情、选集与 HLS 直链播放",
+      "description": "真实全类型片库 + 11 已命名主片库 / 分类39 / 28 子分类 + 原榜单：跨库搜索、实时分页、详情与 HLS 播放",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png",
-      "changelog": "2.1.1：修正源图标（改用订阅仓库托管的 PNG，原 SF Symbol 名在部分系统上不存在会显示为空）。2.1.0 起：直连源站、形态自动适配、m3u8 直链播放。"
+      "changelog": "2.2.0：全部影片改接站方全类型分页片库；新增 11 已命名主片库、分类39（原名未确认）及 28 子分类。跨隐藏库搜索，不额外限制分类；站方单词最多100条，建议完整片名。片库分页到100页停止，避免站方回跳重复，不声称可遍历15万条。保留原榜单与影片级引用。新增影片随站方更新，首页缓存30分钟；部分播放需站方会员。新增组件真机待验。"
     },
     {
       "id": "conflux.huangguo",
