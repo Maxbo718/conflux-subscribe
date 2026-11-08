@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-08T17:17:39Z",
+  "updated": "2026-11-08T17:29:55Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -42,7 +42,7 @@
     {
       "id": "conflux.douyin",
       "title": "抖音直播",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "engine": 1,
       "types": [
         "widget",
@@ -55,7 +55,7 @@
       "description": "新增关键词搜索直播间（主播昵称/直播标题），保留抖音直播聚合分类、14分类组与多清晰度HLS。",
       "author": "Angel Live / Conflux移植",
       "icon": "https://live.douyin.com/favicon.ico",
-      "changelog": "1.2.1：搜索未填 Cookie 时改为明确提示“到设置粘贴登录 Cookie”。1.2.0：新增关键词搜索（需登录Cookie；不附签名以避开抖音验证拦截，遇验证重试一次）。真机待验。"
+      "changelog": "1.2.2：搜索风控不再静默返回空列表，任何风控类型都会给出可读提示；Cookie 缺少 sessionid 时直接提示重新粘贴。1.2.0：新增关键词搜索。真机待验。"
     }
   ]
 }
