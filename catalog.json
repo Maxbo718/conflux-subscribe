@@ -1,8 +1,8 @@
 {
   "format": 1,
   "title": "Minis 自建扩展源",
-  "description": "黄果短剧、瓜子影视的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-07T00:46:23Z",
+  "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
+  "updated": "2026-11-08T06:51:25Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -38,6 +38,24 @@
       "author": "Conflux Community",
       "icon": "https://huangguoai.com/apple-touch-icon.png",
       "changelog": "3.3.7：适配站方新版 POST 分集取流，透传动态 CDN 请求头；修复分集完整网址重复拼接域名。保留旧接口兼容，不缓存签名播放地址。"
+    },
+    {
+      "id": "conflux.douyin",
+      "title": "抖音直播",
+      "version": "1.0.0",
+      "engine": 1,
+      "types": [
+        "widget",
+        "search",
+        "list",
+        "detail",
+        "playback"
+      ],
+      "url": "https://maxbo718.github.io/conflux-subscribe/packages/douyin.js",
+      "description": "抖音公开直播：14 个分类组、230 个原插件子分类选项；房间号与含房间号分享文本查找、多清晰度 HLS。",
+      "author": "Angel Live / Conflux移植",
+      "icon": "https://live.douyin.com/favicon.ico",
+      "changelog": "1.0.0：移植 Angel Live 抖音 2.0.58 的匿名直播浏览、详情和 HLS 取流；合并重复热门/聊天分类。支持房间号及含房间号分享文本查找。不含关键词搜索、扫码登录或实时弹幕；Conflux 真机播放待验证。"
     }
   ]
 }
