@@ -234,7 +234,7 @@ async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
 
 var DEFAULT_API_BASE = "https://huangguoai.com";
 var DEFAULT_COVER_PROXY = "https://hgpic.113210833.xyz/";
-var VERSION = "3.4.0";
+var VERSION = "3.4.1";
 
 // base64url 编码（纯 JS，避免依赖 btoa 的可用性）
 function b64u(str) {
@@ -820,7 +820,7 @@ definePackage({
     {
       type: "widget",
       id: "all-dramas",
-      title: "全部短剧",
+      title: "黄果短剧",
       description: "黄果全库分页浏览；保留最近上新原栏目，不把首页固定集合当全库。",
       template: "poster-grid",
       families: ["medium", "large"],
