@@ -24,7 +24,7 @@
     {
       "id": "conflux.huangguo",
       "title": "黄果短剧",
-      "version": "3.3.7",
+      "version": "3.4.0",
       "engine": 1,
       "types": [
         "widget",
@@ -37,7 +37,7 @@
       "description": "提供黄果 AI 短剧、漫剧、换脸与魔改视频浏览、搜索、选集与全集流畅播放",
       "author": "Conflux Community",
       "icon": "https://huangguoai.com/apple-touch-icon.png",
-      "changelog": "3.3.7：适配站方新版 POST 分集取流，透传动态 CDN 请求头；修复分集完整网址重复拼接域名。保留旧接口兼容，不缓存签名播放地址。"
+      "changelog": "3.4.0：新增官网推荐榜、潜力榜与全部短剧分页入口，保留原八组件及原播放/搜索/详情底座；专题推荐两路加载并保持原顺序去重。实际11组件无同源重复。封面仍使用原解密Worker：官方WebP实测也为密文，未修改共享Worker。20语义+6请求体边界、17原功能实网与9新增实网通过，目标手机展示待验。"
     },
     {
       "id": "conflux.douyin",

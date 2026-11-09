@@ -234,7 +234,7 @@ async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
 
 var DEFAULT_API_BASE = "https://huangguoai.com";
 var DEFAULT_COVER_PROXY = "https://hgpic.113210833.xyz/";
-var VERSION = "3.3.7";
+var VERSION = "3.4.0";
 
 // base64url 编码（纯 JS，避免依赖 btoa 的可用性）
 function b64u(str) {
@@ -594,24 +594,57 @@ function topicMainCards(html) {
 
 async function loadTopics(ctx) {
   var html = await getSiteHtml(ctx, "/");
-  var topics = parseTopicCards(html);
+  var topics = parseTopicCards(html).slice(0, 6);
   var items = [], seen = {};
-  for (var i = 0; i < topics.length && i < 6; i++) {
-    var t = topics[i];
-    try {
-      var thtml = await getSiteHtml(ctx, t.slug);
-      var cards = parseDramaCards(ctx, topicMainCards(thtml));
-      for (var j = 0; j < cards.length; j++) {
-        var cid = cards[j].ref.id;
+  /* 复用抖音1.5.0已真机验证的分组Promise.all+分项失败隔离；仅2路，不注入timer。 */
+  for (var i = 0; i < topics.length; i += 2) {
+    var batch = topics.slice(i, i + 2);
+    var results = await Promise.all(batch.map(async function (t) {
+      try {
+        var thtml = await getSiteHtml(ctx, t.slug);
+        return { topic: t, items: parseDramaCards(ctx, topicMainCards(thtml)) };
+      } catch (e) { return { topic: t, items: [] }; }
+    }));
+    /* Promise.all保持原专题顺序；重复片仍由先出现专题决定副标题。 */
+    for (var n = 0; n < results.length; n++) {
+      var r = results[n];
+      for (var j = 0; j < r.items.length; j++) {
+        var card = r.items[j], cid = card.ref.id;
         if (seen[cid]) continue;
         seen[cid] = 1;
-        cards[j].subtitle = t.title;
-        items.push(cards[j]);
+        card.subtitle = r.topic.title;
+        items.push(card);
       }
-    } catch (e) { /* 单个专题失败不影响其余 */ }
+    }
   }
   if (!items.length) fail("unavailable", "黄果专题页面未解析到条目", true);
   return { items: items };
+}
+
+/* 站方真排行榜，影片主键video_id而不是rank/id；不从其他栏目拼榜。 */
+async function loadNamedRank(ctx, kind) {
+  if (kind !== "recommend" && kind !== "potential") fail("invalid_params", "未知榜单", false);
+  var json = await apiGet(ctx, "/api/ranks/" + kind, null, { cacheTtlSeconds: 900 });
+  var data = json && json.data;
+  if (!data || !Array.isArray(data.items) || (data.type && data.type !== kind)) {
+    fail("unavailable", "黄果榜单返回结构无效", true);
+  }
+  var out = [], seen = {};
+  for (var i = 0; i < data.items.length; i++) {
+    var row = data.items[i] || {}, id = String(row.video_id || "");
+    if (!/^[1-9]\d*$/.test(id) || seen[id]) continue;
+    var item = toListItem(ctx, {
+      id: id, title: row.title, cover: row.cover, score: row.score,
+      tags: row.tags, episode_count: row.episode_count, is_finished: row.is_finished
+    });
+    if (!item) continue;
+    seen[id] = true;
+    var metric = row.metric_label && row.metric_value != null ? String(row.metric_label) + " " + String(row.metric_value) : "";
+    if (metric) item.subtitle = (item.subtitle ? item.subtitle + " · " : "") + metric;
+    out.push(item);
+  }
+  if (data.items.length && !out.length) fail("unavailable", "黄果榜单没有有效影片标识", true);
+  return { items: out };
 }
 
 /* ---------- 上游 API 请求封装 ---------- */
@@ -754,6 +787,49 @@ definePackage({
       placeholderData: { items: PLACEHOLDER_ITEMS },
       load: async function (ctx, input) {
         return loadHotRank(ctx);
+      },
+    },
+
+    /* 增量入口：站方两个真榜单及全库分页；旧八组件ID/ref不变。 */
+    {
+      type: "widget",
+      id: "rank-recommend",
+      title: "推荐榜",
+      description: "黄果官网推荐榜，按站方推荐顺序展示。",
+      template: "ranked-rail",
+      families: ["medium", "large"],
+      headerIntent: "list",
+      ref: { source: "custom", id: "list:rank:recommend" },
+      cache: { ttlSeconds: 900 },
+      placeholderData: { items: PLACEHOLDER_ITEMS },
+      load: async function (ctx, input) { return loadNamedRank(ctx, "recommend"); },
+    },
+    {
+      type: "widget",
+      id: "rank-potential",
+      title: "潜力榜",
+      description: "黄果官网潜力榜，按站方潜力顺序展示。",
+      template: "poster-rail",
+      families: ["medium", "large"],
+      headerIntent: "list",
+      ref: { source: "custom", id: "list:rank:potential" },
+      cache: { ttlSeconds: 900 },
+      placeholderData: { items: PLACEHOLDER_ITEMS },
+      load: async function (ctx, input) { return loadNamedRank(ctx, "potential"); },
+    },
+    {
+      type: "widget",
+      id: "all-dramas",
+      title: "全部短剧",
+      description: "黄果全库分页浏览；保留最近上新原栏目，不把首页固定集合当全库。",
+      template: "poster-grid",
+      families: ["medium", "large"],
+      headerIntent: "list",
+      ref: { source: "custom", id: "list:browse" },
+      cache: { ttlSeconds: 900 },
+      placeholderData: { items: PLACEHOLDER_ITEMS },
+      load: async function (ctx, input) {
+        return fetchVideoList(ctx, "/api/videos", { sort: "latest" }, input && input.page);
       },
     },
 
@@ -919,7 +995,9 @@ definePackage({
           return loadHomeSection(ctx, "精选推荐");
         }
         if (id === "list:topics") return loadTopics(ctx);
-        if (id === "list:debug") {
+        if (id === "list:rank:recommend") return loadNamedRank(ctx, "recommend");
+        if (id === "list:rank:potential") return loadNamedRank(ctx, "potential");
+        if (id === "list:debug" || id === "list:browse") {
           res = await fetchVideoList(ctx, "/api/videos", { sort: "latest" }, token);
         } else if (id.indexOf("list:cat:") === 0) {
           var channel = encodeURIComponent(id.slice("list:cat:".length));
