@@ -14,7 +14,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.2.3";
+var VERSION = "2.3.0";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
@@ -166,6 +166,16 @@ CAT_ALL.forEach(function (r) { CAT_IDS[r.id] = r.name; });
 var CAT_ROUTE = { week: "148" };
 function toOptions(list) {
   return list.map(function (r) { return { title: r.name, value: r.id }; });
+}
+
+/* 瓜子官方周榜选项；实例参数与标题/list共用一套身份判定。 */
+var WEEKLY_RANK_OPTIONS = toOptions(RANKS);
+function weeklyRankId(input) {
+  var value = input && input.params ? input.params.rank : null;
+  if (value === undefined || value === null || value === "") return "148";
+  var id = str(value);
+  for (var i = 0; i < RANKS.length; i++) if (RANKS[i].id === id) return id;
+  fail("请选择有效的瓜子周榜类型", "invalid_params");
 }
 
 /* ---------- Picker 静态预览数据（安装阶段不联网，写死在清单里） ----------
@@ -1388,7 +1398,7 @@ definePackage({
   title: "瓜子影视",
   version: VERSION,
   engine: 1,
-  description: "15 个独立榜单 + 全站播放：周榜、流媒体新片、搜索、详情、选集与 HLS 直链播放",
+  description: "可配置周榜 + 5 个流媒体新片榜 + 全站播放：搜索、详情、选集与 HLS 直链播放",
   icon: ICON,
   permissions: {
     /* 前缀通配（官方 danmu.js 同写法）覆盖站点轮换域名 + 用户自填域名；
@@ -1436,190 +1446,32 @@ definePackage({
       },
     },
 
-    /* ---------- Widget：本周电影榜 ---------- */
+    /* ---------- Widget：周榜（按实例参数选择类型） ---------- */
     {
       type: "widget",
       id: "rank-148",
-      title: "本周电影榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
+      title: "瓜子周榜",
+      description: "瓜子官方周榜 · 在参数设置中选择电影、国剧、美剧等 10 种类型",
       template: "poster-ranked",
-      header: "list",
+      headerIntent: "list",
       ref: { source: "custom", id: "list:rank:148" },
+      params: [
+        {
+          name: "rank",
+          title: "周榜类型",
+          type: "select",
+          default: "148",
+          options: WEEKLY_RANK_OPTIONS,
+        },
+      ],
       placeholderData: PLACEHOLDER_RANK,
       cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/148", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
+      resolveTitle: function (ctx, input) {
+        return RANK_IDS[weeklyRankId(input)];
       },
-    },
-    /* ---------- Widget：本周国剧榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-15",
-      title: "本周国剧榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:15" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/15", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
-      },
-    },
-    /* ---------- Widget：本周美剧榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-8",
-      title: "本周美剧榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:8" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/8", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
-      },
-    },
-    /* ---------- Widget：本周韩剧榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-10",
-      title: "本周韩剧榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:10" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/10", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
-      },
-    },
-    /* ---------- Widget：本周英剧榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-9",
-      title: "本周英剧榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:9" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/9", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
-      },
-    },
-    /* ---------- Widget：本周日剧榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-11",
-      title: "本周日剧榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:11" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/11", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
-      },
-    },
-    /* ---------- Widget：本周泰剧榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-149",
-      title: "本周泰剧榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:149" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/149", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
-      },
-    },
-    /* ---------- Widget：本周动漫榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-12",
-      title: "本周动漫榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:12" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/12", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
-      },
-    },
-    /* ---------- Widget：本周综艺榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-171",
-      title: "本周综艺榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:171" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/171", { page: 1 });
-        var rows = asArray(asJson(json) && asJson(json).list);
-        var items = [];
-        rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });
-        return { items: items };
-      },
-    },
-    /* ---------- Widget：本周纪录片榜 ---------- */
-    {
-      type: "widget",
-      id: "rank-172",
-      title: "本周纪录片榜",
-      description: "瓜子官方豆瓣周榜 · Top 10",
-      template: "poster-grid",
-      header: "list",
-      ref: { source: "custom", id: "list:rank:172" },
-      placeholderData: PLACEHOLDER_RANK,
-      cache: { ttlSeconds: 1800 },
-      load: async function (ctx) {
-        var json = await apiGet(ctx, "/rank/172", { page: 1 });
+      load: async function (ctx, input) {
+        var id = weeklyRankId(input);
+        var json = await apiGet(ctx, "/rank/" + id, { page: 1 });
         var rows = asArray(asJson(json) && asJson(json).list);
         var items = [];
         rows.forEach(function (r) { var it = listItem(ctx, r); if (it) items.push(it); });

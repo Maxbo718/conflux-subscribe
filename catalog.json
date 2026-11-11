@@ -2,12 +2,12 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-08T18:04:48Z",
+  "updated": "2026-11-11T12:20:24Z",
   "packages": [
     {
       "id": "conflux.guazi",
       "title": "瓜子影视",
-      "version": "2.2.3",
+      "version": "2.3.0",
       "engine": 1,
       "types": [
         "widget",
@@ -17,9 +17,9 @@
         "playback"
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/guazi.js",
-      "description": "真实全类型片库 + 11 已命名主片库 / 分类39 / 28 子分类 + 原榜单：跨库搜索、实时分页、详情与 HLS 播放",
+      "description": "可配置周榜 + 5 个流媒体新片榜 + 全站播放；周榜在小组件参数中选择类型。",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png",
-      "changelog": "2.2.3：会员说明前置到实际展示标题，并同步简介字段；付费分集使用官方 VIP 徽标。仅改变展示片名，不污染引用中的干净片名；详情不缓存，修复裸 ID 兜底吞掉会员错误。原生播放按钮仍可能统一显示无资源，不再承诺异常消息必弹窗。2.2.2 的副标题/内部字段不是会员 UI 验收依据；本版新增真实字段及语义测试，新提示真机显示仍需用户确认。"
+      "changelog": "2.3.0：10个独立周榜合并为一个可配置Widget；参数选择榜单，标题与展开列表同步。保留电影榜ID，其他旧周榜卡片需重新添加并选择类型；其余栏目、搜索、会员提示和播放不变。"
     },
     {
       "id": "conflux.huangguo",
