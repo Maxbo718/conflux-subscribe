@@ -58,23 +58,6 @@
       "changelog": "1.4.0：免登录房间池改为持久化累积采集（每次搜索约扩 300 个房间，覆盖 230 个子分类首屏，累计可达 2000+ 房间），命中即秒回并显示采集进度。实测 deep paging 收益低、count 上限 20、无批量接口。1.3.0：无登录降级筛选。真机待验。",
       "md5": "a86f42c50bf62d7dac97d31f7ff28a0f",
       "size": 200626
-    },
-    {
-      "id": "conflux.missav",
-      "title": "MissAV",
-      "version": "1.0.0",
-      "engine": 1,
-      "types": [
-        "widget",
-        "list",
-        "search",
-        "detail",
-        "playback"
-      ],
-      "url": "https://maxbo718.github.io/conflux-subscribe/packages/missav.js",
-      "icon": "https://missav.live/favicon.ico",
-      "description": "Webox移植测试版：15个可用分类、8种排序，搜索分页、详情及HLS；站点可能要求Cloudflare验证，真机待验。",
-      "changelog": "1.0.0 初始测试版。保留原解析器与实际HLS线路，Cookie只发站点、不发媒体CDN。离线47项通过；当前上游验证可能拦截，尚未Conflux真机验收。"
     }
   ]
 }
