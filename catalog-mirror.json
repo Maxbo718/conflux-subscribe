@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Conflux 官方扩展全集（镜像）",
   "description": "ConfluxOne/ExtensionSamples 全部扩展现已收录，包体直连官方仓库，目录与版本号每日自动跟随官方更新。",
-  "updated": "2026-11-12T18:55:49Z",
+  "updated": "2026-11-13T00:23:27Z",
   "packages": [
     {
       "id": "conflux.bangumi",
