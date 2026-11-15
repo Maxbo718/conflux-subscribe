@@ -62,7 +62,7 @@
     {
       "id": "conflux.heitao",
       "title": "黑桃短剧",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "engine": 1,
       "types": [
         "widget",
@@ -73,8 +73,8 @@
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/heitao.js",
       "description": "黑桃短剧（heitaodj.com）：栏目与题材筛选、搜索、详情分集、原生HLS直连播放。无需自建Worker，无需填写Cookie。",
-      "icon": "https://heitaodj.com/favicon.ico",
-      "changelog": "1.0.3：性能优化（选择器一次编译、同页DOM复用、URL缓存），解析耗时约降40%，行为与1.0.2一致。1.0.2：内置HTML解析器适配无 ctx.html 的运行时；真机已验证。"
+      "icon": "https://maxbo718.github.io/conflux-subscribe/icons/heitao.png",
+      "changelog": "1.0.4：补自绘黑桃图标（站点 favicon 返回 204 空响应）。1.0.3：性能优化约40%。1.0.2：内置HTML解析器适配无 ctx.html 的运行时，真机已验证。"
     }
   ]
 }
