@@ -14,7 +14,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.3.0";
+var VERSION = "2.3.1";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
@@ -692,11 +692,35 @@ function gzKeysBlob() {
   return GZ_KEYS_CACHE;
 }
 /* 设备号：固定种子派生（同一 App 内稳定，避免每次调用都注册新账号） */
+/* 设备号：服务端按 deviceId 把「被标记」的设备归入非官方客户端桶，
+   之后该号的 vurlDetail 一律只返回推广片（app.wanglaoshi…/hls/index.m3u8，code 仍 200）。
+   2026-11-05 矩阵实证：固定派生号 → 广告；随机 UUID → vd.wmvbo.com 正片。
+   因此必须每次实例随机生成，绝不能用常量派生。 */
 function gzDeviceId() {
   if (GZ_STATE.dev) return GZ_STATE.dev;
-  var h = GxCrypto.md5("conflux.guazi.v2|device").toUpperCase();
-  GZ_STATE.dev = h.slice(0, 8) + "-" + h.slice(8, 12) + "-4" + h.slice(12, 15) + "-8" + h.slice(0, 3) + "-" + h.slice(0, 12);
+  GZ_STATE.dev = gzNewDeviceId();
   return GZ_STATE.dev;
+}
+function gzNewDeviceId() {
+  var h = GxCrypto.md5(
+    String(new Date().getTime()) + "|" + String(Math.random()) + "|" +
+    String(Math.random()) + "|" + String(Math.random()) + "|" + String(Math.random())
+  ).toLowerCase();
+  return h.slice(0, 8) + "-" + h.slice(8, 12) + "-4" + h.slice(13, 16) + "-8" + h.slice(17, 20) + "-" + h.slice(20, 32);
+}
+/* 推广片识别：换设备号前必须先判定，不能把广告当线路播出去 */
+function gzIsAdUrl(u) {
+  var s = str(u);
+  if (!s) return false;
+  return /wanglaoshi|xn--fiqs8s/i.test(s) || /\/hls2?\/index\.m3u8/i.test(s);
+}
+/* 换设备号：清空鉴权与已锁定的请求形态，下次调用会自动注册新设备 */
+function gzRotateDevice() {
+  GZ_STATE.dev = "";
+  GZ_STATE.token = "";
+  GZ_STATE.tid = "";
+  GZ_STATE.host = "";
+  GZ_STATE.style = "";
 }
 function gzHeaders() {
   return {
@@ -754,6 +778,9 @@ async function gzPostRaw(ctx, url, bodyStr) {
   for (var i = 0; i < order.length; i++) {
     try {
       var res = await gzPostShape(ctx, url, bodyStr, order[i]);
+      /* 429 是服务端限流，与请求形态无关：直接抛 rate_limited，
+         不能落到「响应无法解密」被当成不可用。 */
+      if (res && num(res.status) === 429) fail("请求过于频繁，请稍后再试 (HTTP 429)", "rate_limited");
       var enc = gzHasEnvelope(res);
       var obj = gzDecode(res);
       if (obj && (enc || num(obj.code) === 200)) {
@@ -765,6 +792,7 @@ async function gzPostRaw(ctx, url, bodyStr) {
          记下第一个错误包络（含服务端原话），继续试下一个形态 */
       if (obj && !best) best = obj;
     } catch (e) {
+      if (e && e.code === "rate_limited") throw e;
       if (!firstErr) firstErr = e;
       gzLog(ctx, order[i] + " 异常：" + ((e && e.message) || e));
     }
@@ -801,7 +829,10 @@ async function gzLoginPass(ctx, host) {
         GZ_STATE.tid = str(obj.data.token_id);
         return true;
       }
-    } catch (e) { /* 换下一个入口 / 下一个域名 */ }
+    } catch (e) {
+      if (e && e.code === "rate_limited") throw e;
+      /* 换下一个入口 / 下一个域名 */
+    }
   }
   return false;
 }
@@ -881,7 +912,10 @@ async function gzCall(ctx, path, params, needAuth) {
       var host = hosts[i];
       var obj = null;
       try { obj = await gzAttempt(ctx, host, path, params, needAuth); }
-      catch (e) { lastMsg = (e && e.message) || "网络异常"; continue; }
+      catch (e) {
+        if (e && e.code === "rate_limited") throw e;
+        lastMsg = (e && e.message) || "网络异常"; continue;
+      }
       /* 解不开不是域名问题，换域名只会白白放大请求量 */
       if (!obj) { lastMsg = "响应无法解密"; break; }
       var code = num(obj.code);
@@ -975,13 +1009,25 @@ async function apiGet(ctx, path, query, opts) {
   if (p.indexOf("/play/") === 0) {
     var vurlId = digits(p.slice("/play/".length));
     if (!vurlId) return { list: [] };
-    var d4 = await gzCall(ctx, "/App/Resource/Vod/vurlDetail", { vurl_id: vurlId }, true);
-    var items = asRows(d4), lines = [];
-    for (var j = 0; j < items.length; j++) {
-      var it = asObject(items[j]);
-      var u = trim(it.url);
-      if (!u) continue;
-      lines.push({ url: u, resolution: num(it.resolution), name: pick(it.name) });
+    var lines = [];
+    /* 被服务端标记的设备只会拿到推广片（code 200 + n=1），此时换设备号重取，
+       最多轮换两次；换完仍只有推广片就返回空，不把广告当正片播出去。 */
+    for (var attempt = 0; attempt < 3; attempt++) {
+      var d4 = await gzCall(ctx, "/App/Resource/Vod/vurlDetail", { vurl_id: vurlId }, true);
+      var items = asRows(d4), ads = 0, got = [];
+      for (var j = 0; j < items.length; j++) {
+        var it = asObject(items[j]);
+        var u = trim(it.url);
+        if (!u) continue;
+        if (gzIsAdUrl(u)) { ads++; continue; }
+        got.push({ url: u, resolution: num(it.resolution), name: pick(it.name) });
+      }
+      lines = got;
+      if (lines.length) break;
+      if (!ads) break;
+      if (attempt >= 2) break;
+      gzRotateDevice();
+      gzLog(ctx, "只拿到推广片，已轮换设备号重试（" + (attempt + 1) + "/2）");
     }
     return { list: lines };
   }
