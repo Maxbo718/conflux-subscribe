@@ -11,7 +11,11 @@ const OUT = process.argv[2] || "catalog-mirror.json";
 async function get(url, asText = true) {
   for (let i = 0; i < 3; i++) {
     try {
-      const r = await fetch(url, { headers: { "user-agent": "conflux-mirror/1.0" } });
+      const headers = { "user-agent": "conflux-mirror/1.0" };
+      // 认证后 GitHub API 限额从 60/小时（runner 共享 IP 易耗尽）提升到 5000/小时
+      if (process.env.GITHUB_TOKEN && url.includes("api.github.com"))
+        headers.authorization = "Bearer " + process.env.GITHUB_TOKEN;
+      const r = await fetch(url, { headers });
       if (!r.ok) throw new Error("HTTP " + r.status);
       return asText ? await r.text() : await r.json();
     } catch (e) {
@@ -152,3 +156,4 @@ if (warnings.length) {
   console.log(`\n::warning::镜像有 ${warnings.length} 条告警，可能有扩展未被收录`);
   for (const w of warnings) console.log("::warning::" + w.replace(/\n/g, " "));
 }
+
