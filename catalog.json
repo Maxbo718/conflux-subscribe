@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-17T11:10:44Z",
+  "updated": "2026-11-17T15:49:30Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -24,7 +24,7 @@
     {
       "id": "conflux.huangguo",
       "title": "黄果短剧",
-      "version": "3.4.1",
+      "version": "3.4.2",
       "engine": 1,
       "types": [
         "widget",
@@ -34,10 +34,10 @@
         "playback"
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/huangguo.js",
-      "description": "提供黄果 AI 短剧、漫剧、换脸与魔改视频浏览、搜索、选集与全集流畅播放",
+      "description": "提供黄果 AI 短剧、漫剧视频浏览、搜索、选集与全集流畅播放",
       "author": "Conflux Community",
       "icon": "https://huangguoai.com/apple-touch-icon.png",
-      "changelog": "3.4.1：将原「全部短剧」组件标题改为「黄果短剧」；组件 id、ref 与 /api/videos 分页逻辑不变，其余10个组件及播放/搜索/详情/封面逻辑均未改。3.4.0 内容：新增官网推荐榜、潜力榜与全库分页入口，专题推荐两路加载并保持原顺序去重。本版20语义+6请求体边界+17原功能实网+7新增实网通过，真机显示待验。"
+      "changelog": "3.4.2：修复当前 App 下播放无资源——播放取流兼容三参/两参多种请求形态（旧两参调用会把调用参数整体当请求体，站点返回「播放参数无效」），任一形态取到有效流即用；换脸/魔改分类站方已下线（HTTP 410），组件改为返回空列表不再报错。其余栏目、搜索、详情和封面逻辑未改。实网回归 17/17、首/中/末共 6 集首片解密字节级通过，真机待确认。"
     },
     {
       "id": "conflux.douyin",

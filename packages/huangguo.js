@@ -138,22 +138,46 @@ async function manifestDuration(ctx, url) {
   }
 }
 
+/* 站方播放接口要求 POST + JSON body（{}）。不同 App 版本的 ctx.http.post 形态不同，
+   必须逐形态尝试，直到拿到带 streams 的有效数据：
+     1) 三参 (url, body, options)  —— 磁力熊/瓜子线上包已在真机验证可用（当前 App）
+     2) 两参 options.body = 对象    —— 真机对象 body 可送出（ONE 实测）
+     3) 两参 options.body = 字符串  —— 老版黄果形态；当前 App 会把 options 整体当 body，
+        站点回 {"data":[],"msg":"播放参数无效"}，因此只作最后的兼容
+   形态不匹配时站点仍回 HTTP 200，所以判定必须看 data 是否含 streams，不能只看状态码。 */
+async function postPlayback(ctx, endpoint, requestHeaders) {
+  var shapes = [
+    function () { return ctx.http.post(endpoint, "{}", { headers: requestHeaders, timeoutMs: 12000 }); },
+    function () { return ctx.http.post(endpoint, { body: {}, headers: requestHeaders, timeoutMs: 12000 }); },
+    function () { return ctx.http.post(endpoint, { body: "{}", headers: requestHeaders, timeoutMs: 12000 }); }
+  ];
+  var lastStatus = 0;
+  for (var i = 0; i < shapes.length; i++) {
+    var res;
+    try { res = await shapes[i](); } catch (e) { continue; }
+    if (!res) continue;
+    var s = Number(res.status) || 0;
+    if (s === 429) fail("rate_limited", "请求过于频繁，请稍后再试", true);
+    if (s === 404) fail("not_found", "找不到该作品或内容", false);
+    if (s < 200 || s >= 300) { lastStatus = s; continue; }
+    var envelope;
+    try { envelope = parseData(res); } catch (e) { continue; }
+    var p = (envelope && envelope.data) || envelope;
+    if (p && typeof p === "object" && !Array.isArray(p) && p.streams) return p;
+    lastStatus = s;
+  }
+  if (lastStatus >= 400) fail("unavailable", "黄果服务暂时不可用 (HTTP " + lastStatus + ")", true);
+  // 三种请求形态都拿到 200 但没有 streams：站点协议变化，明确报错而不是静默空列表
+  fail("unavailable", "黄果取流返回无效或集数不匹配", true);
+}
+
 /* 站方新版播放器：起播/切集均 POST，即取即用，不缓存签名。 */
 async function currentPlayback(ctx, base, id, ep) {
   if (!ctx.http || typeof ctx.http.post !== "function") return null;
   var endpoint = base + "/api/videos/" + encodeURIComponent(id) + "/episodes/" + ep + "/playback";
-  var res;
-  try {
-    // 与官方 hongguo 样例一致：两参，body 在 options 内。
-    res = await ctx.http.post(endpoint, {
-      body: "{}",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": base + "/video/" + id + "/" },
-      timeoutMs: 12000
-    });
-  } catch (e) { fail("unavailable", "黄果取流请求失败，请稍后重试", true); }
-  var envelope = check(res, true);
-  if (!envelope) return null;
-  var p = envelope.data || envelope;
+  var requestHeaders = { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0", "Referer": base + "/video/" + id + "/" };
+  var p = await postPlayback(ctx, endpoint, requestHeaders);
+  if (!p) return null;
   if (p.manifest_method !== "GET" || String(p.id) !== String(id) || Number(p.ep) !== ep || !p.streams) {
     fail("unavailable", "黄果取流返回无效或集数不匹配", true);
   }
@@ -234,7 +258,7 @@ async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
 
 var DEFAULT_API_BASE = "https://huangguoai.com";
 var DEFAULT_COVER_PROXY = "https://hgpic.113210833.xyz/";
-var VERSION = "3.4.1";
+var VERSION = "3.4.2";
 
 // base64url 编码（纯 JS，避免依赖 btoa 的可用性）
 function b64u(str) {
@@ -287,11 +311,12 @@ function parseData(res) {
   return data;
 }
 
-function check(res, allow404) {
+function check(res, allow404, allowGone) {
   if (!res) fail("unavailable", "服务无响应，请检查网络", true);
   var s = res.status;
   if (s >= 200 && s < 300) return parseData(res);
   if (s === 404 && allow404) return null;
+  if (s === 410 && allowGone) return null;
   if (s === 404) fail("not_found", "找不到该作品或内容", false);
   if (s === 429) fail("rate_limited", "请求过于频繁，请稍后再试", true);
   if (s === 400 || s === 422) fail("invalid_params", "请求参数无效", false);
@@ -663,15 +688,17 @@ async function apiGet(ctx, path, query, opts) {
     timeoutMs: opts.timeoutMs || 15000,
     cacheTtlSeconds: opts.cacheTtlSeconds,
   });
-  return check(res, opts.allow404);
+  return check(res, opts.allow404, opts.allowGone);
 }
 
 // 抓取视频列表：最新、频道或排序
 async function fetchVideoList(ctx, endpoint, query, page) {
   var p = pageNumber(page);
   var q = Object.assign({}, query || {}, { page: p });
-  var json = await apiGet(ctx, endpoint, q, { cacheTtlSeconds: 900 });
+  var json = await apiGet(ctx, endpoint, q, { cacheTtlSeconds: 900, allowGone: true });
   var data = (json && json.data) || {};
+  // 站方下线的栏目（HTTP 410「内容已下线」）返回空列表，不把整个首页组件变成错误
+  if (!json) return { items: [] };
   var items = Array.isArray(data.items) ? data.items : [];
   var pagination = data.pagination || {};
 
