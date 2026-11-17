@@ -20,6 +20,8 @@ jobs:
           node-version: "20"
 
       - name: 生成镜像目录
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node mirror.mjs catalog-mirror.json
 
       - name: 无变化则退出
