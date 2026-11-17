@@ -258,7 +258,7 @@ async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
 
 var DEFAULT_API_BASE = "https://huangguoai.com";
 var DEFAULT_COVER_PROXY = "https://hgpic.113210833.xyz/";
-var VERSION = "3.4.2";
+var VERSION = "3.4.3";
 
 // base64url 编码（纯 JS，避免依赖 btoa 的可用性）
 function b64u(str) {
@@ -932,40 +932,6 @@ definePackage({
       },
     },
 
-    /* 小组件：AI换脸（统一网格风格） */
-    {
-      type: "widget",
-      id: "cat-ai-huanlian",
-      title: "AI换脸",
-      description: "黄果分类 · AI换脸 最新上架",
-      template: "poster-grid",
-      families: ["medium", "large"],
-      header: "list",
-      ref: { source: "custom", id: "list:cat:ai-huanlian" },
-      cache: { ttlSeconds: 1800 },
-      placeholderData: { items: PLACEHOLDER_ITEMS },
-      load: async function (ctx, input) {
-        return fetchVideoList(ctx, "/api/videos/category/ai-huanlian", { sort: "latest" }, input && input.page);
-      },
-    },
-
-    /* 小组件：AI魔改（统一网格风格） */
-    {
-      type: "widget",
-      id: "cat-ai-mogai",
-      title: "AI魔改",
-      description: "黄果分类 · AI魔改 最新上架",
-      template: "poster-grid",
-      families: ["medium", "large"],
-      header: "list",
-      ref: { source: "custom", id: "list:cat:ai-mogai" },
-      cache: { ttlSeconds: 1800 },
-      placeholderData: { items: PLACEHOLDER_ITEMS },
-      load: async function (ctx, input) {
-        return fetchVideoList(ctx, "/api/videos/category/ai-mogai", { sort: "latest" }, input && input.page);
-      },
-    },
-
     /* 4. 搜索扩展 */
     {
       type: "search",
@@ -1026,6 +992,9 @@ definePackage({
         if (id === "list:rank:potential") return loadNamedRank(ctx, "potential");
         if (id === "list:debug" || id === "list:browse") {
           res = await fetchVideoList(ctx, "/api/videos", { sort: "latest" }, token);
+        } else if (id === "list:cat:ai-huanlian" || id === "list:cat:ai-mogai") {
+          // 站方已下线这两个分类（HTTP 410「内容已下线」），组件已移除；旧 ref 直接给空列表，不打上游
+          return { items: [] };
         } else if (id.indexOf("list:cat:") === 0) {
           var channel = encodeURIComponent(id.slice("list:cat:".length));
           res = await fetchVideoList(ctx, "/api/videos/category/" + channel, { sort: "latest" }, token);
