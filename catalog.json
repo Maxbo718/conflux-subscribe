@@ -2,12 +2,12 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-20T05:33:37Z",
+  "updated": "2026-11-20T05:34:49Z",
   "packages": [
     {
       "id": "conflux.guazi",
       "title": "瓜子影视",
-      "version": "2.3.1",
+      "version": "2.4.0",
       "engine": 1,
       "types": [
         "widget",
@@ -19,7 +19,9 @@
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/guazi.js",
       "description": "可配置周榜 + 5 个流媒体新片榜 + 全站播放；周榜在小组件参数中选择类型。",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png",
-      "changelog": "2.3.1：修复播放只出推广片——设备号改为随机 UUID（固定派生号会被站方标记成非官方客户端，vurlDetail 只返回约 50 秒的推广片），取流时过滤推广片、全部为推广片时轮换设备号重取（最多 2 次）；HTTP 429 正确映射为可重试。榜单、搜索、详情、片库逻辑未改。实网回归 16/16，正片清单 343 段、首片 TS 0x47。"
+      "changelog": "2.4.0：榜单全屏列表接入官方 tabs 分段（10 周榜 + 5 流媒体榜 + 热门混榜共 16 个分段，榜单页内直接切换；默认当前榜单，非法 tab 回退原榜单）。片库/全部/搜索入口无分段；无 tab 行为与 2.3.1 一致，设备号、播放与域名逻辑未改。",
+      "md5": "f7f92d97bd2ae7e00b795ff7400c8d7c",
+      "size": 96928
     },
     {
       "id": "conflux.huangguo",

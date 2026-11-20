@@ -14,7 +14,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.3.1";
+var VERSION = "2.4.0";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
@@ -2286,6 +2286,21 @@ definePackage({
       style: "grid",
       accepts: { sources: ["custom"] },
       search: { id: "main" },
+      /* 榜单页共享同一套 16 个分段；tabs 本身不联网。 */
+      tabs: async function (ctx, input) {
+        var ref = (input && input.ref) || {};
+        var id = str(ref.id);
+        if (id.indexOf("list:rank:") !== 0 && id.indexOf("list:cat:") !== 0) return null;
+        var tabs = RANKS.concat(NEW).map(function (r) {
+          return { id: r.id, title: r.name };
+        });
+        tabs.push({ id: "mix", title: "热门混榜" });
+        var current = id.indexOf("list:cat:") === 0
+          ? CAT_ROUTE[id.slice("list:cat:".length)]
+          : id.slice("list:rank:".length);
+        var valid = current === "mix" || !!RANK_IDS[current];
+        return { tabs: tabs, default: valid ? current : tabs[0].id };
+      },
       load: async function (ctx, input) {
         var ref = (input && input.ref) || {};
         var id = str(ref.id);
@@ -2294,6 +2309,15 @@ definePackage({
         var wanted = (RANK_IDS[params.rank] || CAT_IDS[params.rank])
           ? params.rank
           : (id.indexOf("list:cat:") === 0 ? CAT_ROUTE[id.slice("list:cat:".length)] : id.indexOf("list:rank:") === 0 ? id.slice("list:rank:".length) : "148");
+        /* 仅榜单入口接受合法 tab；显式 tab 优先于实例 params。非法 tab 回退原 ref。 */
+        if (input && input.tab !== undefined && input.tab !== null && input.tab !== ""
+            && (id.indexOf("list:rank:") === 0 || id.indexOf("list:cat:") === 0)) {
+          var tab = str(input.tab);
+          if (tab === "mix" || RANK_IDS[tab]) {
+            id = "list:rank:" + tab;
+            wanted = tab;
+          }
+        }
         if (id === "list:all") return loadAllLibrary(ctx, input);
         if (id.indexOf("list:library") === 0) {
           var spec = librarySpec(id);
