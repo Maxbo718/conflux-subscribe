@@ -258,7 +258,7 @@ async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
 
 var DEFAULT_API_BASE = "https://huangguoai.com";
 var DEFAULT_COVER_PROXY = "https://hgpic.113210833.xyz/";
-var VERSION = "3.4.3";
+var VERSION = "3.5.0";
 
 // base64url 编码（纯 JS，避免依赖 btoa 的可用性）
 function b64u(str) {
@@ -969,8 +969,32 @@ definePackage({
       style: "grid",
       accepts: { sources: ["custom"] },
       search: { id: "search" },
+      // tabs 只重选现有分类/榜单参数；无 tab 的 load 保持原 ref 行为。
+      tabs: async function (ctx, input) {
+        var id = input && input.ref && input.ref.id;
+        if (id === "list:cat:ai-duanju" || id === "list:cat:ai-manju") {
+          return {
+            tabs: [
+              { id: "ai-duanju", title: "AI短剧" },
+              { id: "ai-manju", title: "AI漫剧" }
+            ],
+            default: id.slice("list:cat:".length)
+          };
+        }
+        if (id === "list:rank:recommend" || id === "list:rank:potential") {
+          return {
+            tabs: [
+              { id: "recommend", title: "推荐榜" },
+              { id: "potential", title: "潜力榜" }
+            ],
+            default: id.slice("list:rank:".length)
+          };
+        }
+        return null;
+      },
       load: async function (ctx, input) {
         var id = (input && input.ref && input.ref.id) || "list:newest";
+        var tab = input && input.tab;
         var page = input && input.page;
         var p = page && typeof page.page === "number" ? page.page : 1;
         var token = { type: "page", page: p };
@@ -988,15 +1012,18 @@ definePackage({
           return loadHomeSection(ctx, "精选推荐");
         }
         if (id === "list:topics") return loadTopics(ctx);
-        if (id === "list:rank:recommend") return loadNamedRank(ctx, "recommend");
-        if (id === "list:rank:potential") return loadNamedRank(ctx, "potential");
+        if (id === "list:rank:recommend" || id === "list:rank:potential") {
+          var rank = tab === "recommend" || tab === "potential" ? tab : id.slice("list:rank:".length);
+          return loadNamedRank(ctx, rank);
+        }
         if (id === "list:debug" || id === "list:browse") {
           res = await fetchVideoList(ctx, "/api/videos", { sort: "latest" }, token);
         } else if (id === "list:cat:ai-huanlian" || id === "list:cat:ai-mogai") {
           // 站方已下线这两个分类（HTTP 410「内容已下线」），组件已移除；旧 ref 直接给空列表，不打上游
           return { items: [] };
         } else if (id.indexOf("list:cat:") === 0) {
-          var channel = encodeURIComponent(id.slice("list:cat:".length));
+          var selectedCat = tab === "ai-duanju" || tab === "ai-manju" ? tab : id.slice("list:cat:".length);
+          var channel = encodeURIComponent(selectedCat);
           res = await fetchVideoList(ctx, "/api/videos/category/" + channel, { sort: "latest" }, token);
         } else {
           // 默认按最新上架浏览

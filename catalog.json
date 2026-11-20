@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-20T05:31:46Z",
+  "updated": "2026-11-20T05:33:37Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -24,7 +24,7 @@
     {
       "id": "conflux.huangguo",
       "title": "黄果短剧",
-      "version": "3.4.3",
+      "version": "3.5.0",
       "engine": 1,
       "types": [
         "widget",
@@ -37,7 +37,9 @@
       "description": "提供黄果 AI 短剧、漫剧视频浏览、搜索、选集与全集流畅播放",
       "author": "Conflux Community",
       "icon": "https://huangguoai.com/apple-touch-icon.png",
-      "changelog": "3.4.3：移除站方已下线的「AI换脸」「AI魔改」两个组件（站方分类返回 HTTP 410 内容已下线），组件数 11→9，旧列表 ref 直接返回空不再请求上游；播放、搜索、详情、封面与 3.4.2 一致。3.4.2：修复当前 App 下播放无资源——取流兼容三参/两参多种请求形态（旧两参调用会被站点判「播放参数无效」），真机已确认可播。实网回归 17/17、6 集首片解密字节级通过。"
+      "changelog": "3.5.0：全屏列表接入官方 tabs 分段——AI短剧/AI漫剧 分类互通、推荐榜/潜力榜互通（仅替换现有分类/榜单参数，无 tab 时行为与 3.4.3 完全一致）。取流三形态自适应、下线分类空列表、播放与权限均未改。",
+      "md5": "51f53d780ccdae750342c1604a4e3920",
+      "size": 48538
     },
     {
       "id": "conflux.douyin",
