@@ -15,6 +15,14 @@
 // 条目 ref.source 统一 "custom"：详情 ref.id 是 /voddetail/{id}.html，
 // 每集 ref.id 是 /vodplay/{id}-{sid}-{nid}.html，playback 两种都认。
 //
+// v1.2.2 变更（用户真机反馈：另一部片头像全不显示）：
+// - 实证豆瓣匿名搜索配额极小（~10 次即 403，search/subjects 与 search/movie 共享同池，
+//   恢复需数分钟且随滥用递增；本数据中心 IP 被加重限制，用户住宅 IP 初始正常但浏览多部后也会耗尽）。
+// - 成功缓存 1h→24h（同片重复查看零搜索消耗）；熔断 10min→3min（贴合实测恢复窗口）；
+//   熔断/冷却期间优先用过期缓存兜底头像（已看过的片限流时仍显示），不再一律清空。
+// - 报障片《远方的魔法树》(97793) 实证豆瓣有条目(id 27204009)，配额可用时 11/11 头像全命中；
+//   用户看到 0 头像是其 IP 搜索配额耗尽触发熔断所致，非匹配失败。
+//
 // v1.2.1 变更（用户真机反馈：部分演员头像仍不显示）：
 // - 豆瓣图床 img3 等节点校验 Referer 必须为 *.douban.com（带本站 Referer 返回 403，img9 却放行，
 //   节点间防盗链策略不一致）。requestRules 的 *.doubanio.com Referer 由本站改为 https://m.douban.com/，
@@ -1017,11 +1025,13 @@ async function searchExtension(ctx, input) {
 
 var DOUBAN_ORIGIN = "https://m.douban.com";
 var AVATAR_CACHE = {};
-var AVATAR_CACHE_TTL_MS = 60 * 60 * 1000;
-// 豆瓣匿名配额有限（实证：本出口连续 ~30 次搜索后 403 need_login，celebrities 仍可用）。
-// 失败时按片冷却 5 分钟、全局熔断 10 分钟，避免每次详情都白打两次请求。
+// 成功结果缓存 24 小时：同一部片重复查看不再消耗豆瓣搜索配额（匿名配额极小，实证 ~10 次即 403）。
+var AVATAR_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// 豆瓣匿名搜索配额有限且共享（search/subjects 与 search/movie 同池，~10 次后 403 need_login，
+// 恢复需数分钟且随滥用递增；celebrities 端点配额独立更宽）。
+// 403/429 触发全局熔断 3 分钟（实测恢复窗口），期间优先用过期缓存兜底，不再发搜索请求。
 var AVATAR_FAIL_CACHE = {};
-var AVATAR_FAIL_TTL_MS = 5 * 60 * 1000;
+var AVATAR_FAIL_TTL_MS = 3 * 60 * 1000;
 var DOUBAN_COOLDOWN_UNTIL = 0;
 
 function normalizeName(value) {
@@ -1044,9 +1054,9 @@ async function doubanGet(ctx, path) {
     return null;
   }
   if (!response) return null;
-  // 403/429 = 匿名配额耗尽或限流：触发全局熔断，期间所有头像补全直接跳过
+  // 403/429 = 匿名配额耗尽或限流：触发全局熔断（3 分钟，实测恢复窗口），期间用过期缓存兜底
   if (response.status === 403 || response.status === 429) {
-    DOUBAN_COOLDOWN_UNTIL = Date.now() + 10 * 60 * 1000;
+    DOUBAN_COOLDOWN_UNTIL = Date.now() + 3 * 60 * 1000;
     return null;
   }
   if (response.status !== 200) return null;
@@ -1056,7 +1066,7 @@ async function doubanGet(ctx, path) {
   }
   if (!data || typeof data !== "object") return null;
   if (data.banned) {
-    DOUBAN_COOLDOWN_UNTIL = Date.now() + 10 * 60 * 1000;
+    DOUBAN_COOLDOWN_UNTIL = Date.now() + 3 * 60 * 1000;
     return null;
   }
   return data;
@@ -1097,14 +1107,14 @@ async function enrichPeopleAvatars(ctx, detail, vodId) {
   if (!detail || !detail.people || !detail.people.length) return;
   if (!ctx || !ctx.http || typeof ctx.http.get !== "function") return;
   var now = Date.now();
+  var cached = AVATAR_CACHE[vodId];
+  // 缓存命中（含过期）：先用缓存头像兜底，保证限流期间已看过的片仍有头像
+  if (cached && cached.map) applyAvatarMap(detail.people, cached.map);
+  if (cached && now - cached.ts < AVATAR_CACHE_TTL_MS) return;
+  // 全局熔断或按片冷却期间不发请求（过期缓存已在上面兜底）
   if (now < DOUBAN_COOLDOWN_UNTIL) return;
   var failedAt = AVATAR_FAIL_CACHE[vodId];
   if (failedAt && now - failedAt < AVATAR_FAIL_TTL_MS) return;
-  var cached = AVATAR_CACHE[vodId];
-  if (cached && now - cached.ts < AVATAR_CACHE_TTL_MS) {
-    applyAvatarMap(detail.people, cached.map);
-    return;
-  }
   try {
     var search = await doubanGet(ctx, "/rexxar/api/v2/search/subjects?q=" + encodeURIComponent(detail.title) + "&loc_id=0");
     var subject = pickDoubanSubject(search, detail.title, detail.releaseDate);
@@ -1186,7 +1196,7 @@ definePackage({
   author: "sixian",
   site: "https://www.netflixgc.com",
   icon: "https://www.netflixgc.com/upload/site/20241029-1/708c271d0bbf43725b96fad94d0c1eb4.png",
-  version: "1.2.1",
+  version: "1.2.2",
   engine: 1,
   permissions: {
     network: [
