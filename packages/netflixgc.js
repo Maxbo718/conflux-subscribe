@@ -15,6 +15,11 @@
 // 条目 ref.source 统一 "custom"：详情 ref.id 是 /voddetail/{id}.html，
 // 每集 ref.id 是 /vodplay/{id}-{sid}-{nid}.html，playback 两种都认。
 //
+// v1.2.1 变更（用户真机反馈：部分演员头像仍不显示）：
+// - 豆瓣图床 img3 等节点校验 Referer 必须为 *.douban.com（带本站 Referer 返回 403，img9 却放行，
+//   节点间防盗链策略不一致）。requestRules 的 *.doubanio.com Referer 由本站改为 https://m.douban.com/，
+//   实测 12/12 头像全部 200。
+//
 // v1.2.0 变更（用户真机反馈：演职人员没封面）：
 // - 站点详情页不提供演员照片（角色区恒空，实证）。新增豆瓣 rexxar 公开接口按片名+年份匹配条目，
 //   取 celebrities 头像按姓名补到 people.avatar；失败静默跳过不影响详情；结果缓存 1 小时。
@@ -1007,7 +1012,8 @@ async function searchExtension(ctx, input) {
 // 再取 celebrities 的 avatar 按姓名补到 people 上。失败静默跳过，绝不影响详情主流程。
 // 接口：GET m.douban.com/rexxar/api/v2/search/subjects?q=&loc_id=0（需 Referer）
 //       GET m.douban.com/rexxar/api/v2/{movie|tv}/{id}/celebrities
-// 图片：img*.doubanio.com 无 Referer 返回 418，由 requestRules 统一带本站 Referer（实测任意 Referer 均 200）。
+// 图片：img*.doubanio.com 无 Referer 返回 418；且 img3 等节点校验 Referer 必须是 *.douban.com
+// （带本站 Referer 会 403，实证），故 requestRules 统一带 https://m.douban.com/。
 
 var DOUBAN_ORIGIN = "https://m.douban.com";
 var AVATAR_CACHE = {};
@@ -1180,7 +1186,7 @@ definePackage({
   author: "sixian",
   site: "https://www.netflixgc.com",
   icon: "https://www.netflixgc.com/upload/site/20241029-1/708c271d0bbf43725b96fad94d0c1eb4.png",
-  version: "1.2.0",
+  version: "1.2.1",
   engine: 1,
   permissions: {
     network: [
@@ -1204,7 +1210,7 @@ definePackage({
   },
   requestRules: [
     { host: "*.wsyzy.org", headers: { Referer: "https://www.netflixgc.com/" } },
-    { host: "*.doubanio.com", headers: { Referer: "https://www.netflixgc.com/" } },
+    { host: "*.doubanio.com", headers: { Referer: "https://m.douban.com/" } },
   ],
   settings: [
     {

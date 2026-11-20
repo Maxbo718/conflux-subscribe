@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-20T19:33:21Z",
+  "updated": "2026-11-20T19:51:33Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -104,7 +104,7 @@
     {
       "id": "sixian.netflixgc",
       "title": "奈飞工厂",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "engine": 1,
       "types": [
         "widget",
@@ -116,9 +116,9 @@
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/netflixgc.js",
       "description": "奈飞工厂（netflixgc.com）在线影视：首页推荐、全量片库分类浏览、搜索（含分页）、详情与多线路在线播放。",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/netflixgc.png",
-      "changelog": "1.2.0：演职人员头像补全——站点详情页无演员照片，改用豆瓣公开接口按片名+年份匹配取头像（失败静默降级不影响详情；限流自动熔断10分钟+按片冷却5分钟；成功缓存1小时；新增 m.douban.com 权限与豆瓣图床 Referer 规则）。1.1.1：电影不再渲染成「第1季/Episode 1」剧集界面（仅电视剧输出分集）；兼容站点偶发 JSON 字符串包裹页；片名含下划线类型判定修正。1.1.0：详情简介/类型/主演结构化抽取+评分/状态；片库 mediaType 纠正；搜索分页+长 ASCII 丢词兜底；跳过原生不可播的 NBY PNG 包装线路。",
-      "md5": "a1d589a0a8c33088ec69522248013c94",
-      "size": 52041
+      "changelog": "1.2.1：修复部分演员头像仍不显示——豆瓣图床 img3 等节点要求 Referer 必须为 douban.com 域（带本站 Referer 返回 403，img9 却放行），requestRules 改用 https://m.douban.com/，实测报障片 12/12 头像字节级全部 200+真图。1.2.0：演职人员头像补全（豆瓣公开接口按片名+年份匹配，限流熔断+静默降级+缓存1小时）。1.1.1：电影不再渲染成剧集界面；兼容 JSON 包裹页。1.1.0：详情结构化抽取+评分/状态；片库 mediaType 纠正；搜索分页+长 ASCII 丢词兜底；跳过 NBY PNG 包装线路。",
+      "md5": "22d94995d1b83e6ff4ce1038142c18a3",
+      "size": 52476
     }
   ]
 }
