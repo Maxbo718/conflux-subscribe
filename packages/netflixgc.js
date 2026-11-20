@@ -15,6 +15,11 @@
 // 条目 ref.source 统一 "custom"：详情 ref.id 是 /voddetail/{id}.html，
 // 每集 ref.id 是 /vodplay/{id}-{sid}-{nid}.html，playback 两种都认。
 //
+// v1.2.0 变更（用户真机反馈：演职人员没封面）：
+// - 站点详情页不提供演员照片（角色区恒空，实证）。新增豆瓣 rexxar 公开接口按片名+年份匹配条目，
+//   取 celebrities 头像按姓名补到 people.avatar；失败静默跳过不影响详情；结果缓存 1 小时。
+//   新增权限 m.douban.com；requestRules 给 *.doubanio.com 带 Referer（无 Referer 418）。
+//
 // v1.1.1 变更（用户真机反馈修复）：
 // - 电影不再输出 episodes[]（旧版电影被 App 渲染成「第1季/Episode 1」剧集 UI；官方 ddys/bangumi 契约：仅 tv 带分集）
 // - fetchHTML 兼容站点偶发的 JSON 字符串包裹页（content-type: application/json 的 CF 缓存变体）
@@ -997,6 +1002,135 @@ async function searchExtension(ctx, input) {
   return content;
 }
 
+// ========== 演职员头像补全（豆瓣 rexxar 公开接口） ==========
+// 站点详情页不提供演员照片（角色区恒空，实证多部影片）。用豆瓣移动端公开接口按片名匹配条目，
+// 再取 celebrities 的 avatar 按姓名补到 people 上。失败静默跳过，绝不影响详情主流程。
+// 接口：GET m.douban.com/rexxar/api/v2/search/subjects?q=&loc_id=0（需 Referer）
+//       GET m.douban.com/rexxar/api/v2/{movie|tv}/{id}/celebrities
+// 图片：img*.doubanio.com 无 Referer 返回 418，由 requestRules 统一带本站 Referer（实测任意 Referer 均 200）。
+
+var DOUBAN_ORIGIN = "https://m.douban.com";
+var AVATAR_CACHE = {};
+var AVATAR_CACHE_TTL_MS = 60 * 60 * 1000;
+// 豆瓣匿名配额有限（实证：本出口连续 ~30 次搜索后 403 need_login，celebrities 仍可用）。
+// 失败时按片冷却 5 分钟、全局熔断 10 分钟，避免每次详情都白打两次请求。
+var AVATAR_FAIL_CACHE = {};
+var AVATAR_FAIL_TTL_MS = 5 * 60 * 1000;
+var DOUBAN_COOLDOWN_UNTIL = 0;
+
+function normalizeName(value) {
+  return String(value || "").toLowerCase().replace(/[\s·・:：\-—–_,，.。!！?？'""''()（）\[\]【】]/g, "");
+}
+
+function doubanHeaders() {
+  var headers = {};
+  Object.keys(BROWSER_HEADERS).forEach(function (k) { headers[k] = BROWSER_HEADERS[k]; });
+  headers["Referer"] = "https://m.douban.com/movie/";
+  headers["Accept"] = "application/json, text/plain, */*";
+  return headers;
+}
+
+async function doubanGet(ctx, path) {
+  var response;
+  try {
+    response = await ctx.http.get(DOUBAN_ORIGIN + path, { headers: doubanHeaders(), timeoutMs: 8000 });
+  } catch (error) {
+    return null;
+  }
+  if (!response) return null;
+  // 403/429 = 匿名配额耗尽或限流：触发全局熔断，期间所有头像补全直接跳过
+  if (response.status === 403 || response.status === 429) {
+    DOUBAN_COOLDOWN_UNTIL = Date.now() + 10 * 60 * 1000;
+    return null;
+  }
+  if (response.status !== 200) return null;
+  var data = response.data;
+  if (typeof data === "string") {
+    try { data = JSON.parse(data); } catch (parseError) { return null; }
+  }
+  if (!data || typeof data !== "object") return null;
+  if (data.banned) {
+    DOUBAN_COOLDOWN_UNTIL = Date.now() + 10 * 60 * 1000;
+    return null;
+  }
+  return data;
+}
+
+// 按片名+年份在豆瓣搜索结果里挑最匹配的条目，返回 { id, kind } 或 null
+function pickDoubanSubject(data, title, year) {
+  var items = (data && data.subjects && data.subjects.items) || [];
+  var want = normalizeName(title);
+  if (!want) return null;
+  var best = null;
+  var bestScore = -1;
+  for (var i = 0; i < items.length && i < 10; i++) {
+    var target = items[i] && items[i].target;
+    if (!target || !target.id) continue;
+    var got = normalizeName(target.title);
+    if (!got) continue;
+    var score = 0;
+    if (got === want) score += 4;
+    else if (got.indexOf(want) === 0 || want.indexOf(got) === 0) score += 2;
+    else continue;
+    var ty = String(target.year || "");
+    if (year && ty === String(year)) score += 2;
+    else if (year && ty && Math.abs(parseInt(ty, 10) - parseInt(year, 10)) <= 1) score += 1;
+    var uri = String(target.uri || "");
+    var km = /\/(movie|tv)\/(\d+)/.exec(uri);
+    if (!km) continue;
+    if (score > bestScore) {
+      bestScore = score;
+      best = { id: km[2], kind: km[1] };
+    }
+  }
+  // 至少要有标题匹配（score>=2）才采用，避免拿错片子的头像
+  return bestScore >= 2 ? best : null;
+}
+
+async function enrichPeopleAvatars(ctx, detail, vodId) {
+  if (!detail || !detail.people || !detail.people.length) return;
+  if (!ctx || !ctx.http || typeof ctx.http.get !== "function") return;
+  var now = Date.now();
+  if (now < DOUBAN_COOLDOWN_UNTIL) return;
+  var failedAt = AVATAR_FAIL_CACHE[vodId];
+  if (failedAt && now - failedAt < AVATAR_FAIL_TTL_MS) return;
+  var cached = AVATAR_CACHE[vodId];
+  if (cached && now - cached.ts < AVATAR_CACHE_TTL_MS) {
+    applyAvatarMap(detail.people, cached.map);
+    return;
+  }
+  try {
+    var search = await doubanGet(ctx, "/rexxar/api/v2/search/subjects?q=" + encodeURIComponent(detail.title) + "&loc_id=0");
+    var subject = pickDoubanSubject(search, detail.title, detail.releaseDate);
+    if (!subject) { AVATAR_FAIL_CACHE[vodId] = Date.now(); return; }
+    var celeb = await doubanGet(ctx, "/rexxar/api/v2/" + subject.kind + "/" + subject.id + "/celebrities");
+    if (!celeb) { AVATAR_FAIL_CACHE[vodId] = Date.now(); return; }
+    var map = {};
+    ["directors", "actors"].forEach(function (key) {
+      (celeb[key] || []).forEach(function (person) {
+        var name = trim(person && person.name);
+        if (!name) return;
+        var avatar = person.avatar && (person.avatar.large || person.avatar.normal || person.avatar.small);
+        if (avatar && /^https?:\/\//.test(avatar)) map[normalizeName(name)] = avatar;
+      });
+    });
+    AVATAR_CACHE[vodId] = { map: map, ts: Date.now() };
+    applyAvatarMap(detail.people, map);
+  } catch (error) {
+    // 补全失败不影响详情
+    AVATAR_FAIL_CACHE[vodId] = Date.now();
+  }
+}
+
+function applyAvatarMap(people, map) {
+  if (!map) return;
+  people.forEach(function (person) {
+    if (person.avatar) return;
+    var url = map[normalizeName(person.title)];
+    if (url) person.avatar = url;
+  });
+}
+
 // ========== 扩展 handlers ==========
 
 async function loadHome(ctx) {
@@ -1010,7 +1144,12 @@ async function readDetailPage(ctx, input) {
     throw ExtensionError({ code: "invalid_params", message: "缺少条目地址", retryable: false });
   }
   var html = await fetchHTML(ctx, ref.id);
-  return parseDetail(html, ref);
+  var detail = parseDetail(html, ref);
+  if (detail) {
+    var idm = DETAIL_RE.exec(ref.id);
+    await enrichPeopleAvatars(ctx, detail, idm ? idm[1] : ref.id);
+  }
+  return detail;
 }
 
 function placeholderContent() {
@@ -1041,11 +1180,12 @@ definePackage({
   author: "sixian",
   site: "https://www.netflixgc.com",
   icon: "https://www.netflixgc.com/upload/site/20241029-1/708c271d0bbf43725b96fad94d0c1eb4.png",
-  version: "1.1.1",
+  version: "1.2.0",
   engine: 1,
   permissions: {
     network: [
     "https://www.netflixgc.com",
+    "https://m.douban.com",
     "https://mplayer.nfgc.net",
     "https://pcdn-qn-new.samtory.cn",
     "https://v.fengbao11.com",
@@ -1064,6 +1204,7 @@ definePackage({
   },
   requestRules: [
     { host: "*.wsyzy.org", headers: { Referer: "https://www.netflixgc.com/" } },
+    { host: "*.doubanio.com", headers: { Referer: "https://www.netflixgc.com/" } },
   ],
   settings: [
     {
