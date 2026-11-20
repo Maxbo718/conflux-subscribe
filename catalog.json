@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-17T16:33:14Z",
+  "updated": "2026-11-20T05:31:46Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -42,7 +42,7 @@
     {
       "id": "conflux.douyin",
       "title": "抖音直播",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "engine": 1,
       "types": [
         "widget",
@@ -55,9 +55,9 @@
       "description": "抖音直播：14 分类组 + 聚合分类 + 关键词搜索。未填 Cookie 时自动降级为「已采集在播房间的关键词筛选」，填了登录 Cookie 走全站搜索。",
       "author": "Angel Live / Conflux移植",
       "icon": "https://live.douyin.com/favicon.ico",
-      "changelog": "1.4.0：免登录房间池改为持久化累积采集（每次搜索约扩 300 个房间，覆盖 230 个子分类首屏，累计可达 2000+ 房间），命中即秒回并显示采集进度。实测 deep paging 收益低、count 上限 20、无批量接口。1.3.0：无登录降级筛选。真机待验。",
-      "md5": "a86f42c50bf62d7dac97d31f7ff28a0f",
-      "size": 200626
+      "changelog": "1.6.0：全屏直播列表新增官方 tabs 分段，各分组内可直接切换分区（默认保持原分类）；无 tab 或旧版 App 行为不变。仅新增分段能力与 tab 输入兼容，不改签名、播放、搜索与聚合。",
+      "md5": "91e6ed60cd28560a2b04578c845e3a3c",
+      "size": 202849
     },
     {
       "id": "conflux.heitao",
