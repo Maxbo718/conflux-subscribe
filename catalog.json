@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-20T18:38:07Z",
+  "updated": "2026-11-20T19:11:18Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -104,7 +104,7 @@
     {
       "id": "sixian.netflixgc",
       "title": "奈飞工厂",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "engine": 1,
       "types": [
         "widget",
@@ -116,9 +116,9 @@
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/netflixgc.js",
       "description": "奈飞工厂（netflixgc.com）在线影视：首页推荐、全量片库分类浏览、搜索（含分页）、详情与多线路在线播放。",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/netflixgc.png",
-      "changelog": "1.1.0：修复详情简介/类型/主演恒空（改结构化抽取），新增站方评分与更新状态；片库分类 mediaType 纠正（连续剧/综艺/纪录片不再标 movie）；搜索支持分页，并修复ASCII 关键词≥11字符时误返全库的站点BUG（自动改走建议接口）；跳过原生不可播的 NBY PNG包装线路（蓝光-1），其余线路实测可解析；widget header 升级 headerIntent。",
-      "md5": "d372a02649ab08088dc5bb6918a163c6",
-      "size": 44287
+      "changelog": "1.1.1：修复电影被渲染成「第1季/Episode 1」剧集界面（电影不再输出分集，与官方 ddys/bangumi 契约一致，播放按钮直接取线路）；兼容站点偶发把整页 HTML 当 JSON 字符串返回的缓存变体；片名含下划线时类型判定不再误判。1.1.0：详情简介/类型/主演结构化抽取修复+评分/状态；片库 mediaType 按分类纠正；搜索分页+长 ASCII 丢词回退兜底；跳过原生不可播的 NBY PNG 包装线路。",
+      "md5": "e5bbc09c01e01e4df8db3c7a134ab607",
+      "size": 46038
     }
   ]
 }

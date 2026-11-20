@@ -15,6 +15,11 @@
 // 条目 ref.source 统一 "custom"：详情 ref.id 是 /voddetail/{id}.html，
 // 每集 ref.id 是 /vodplay/{id}-{sid}-{nid}.html，playback 两种都认。
 //
+// v1.1.1 变更（用户真机反馈修复）：
+// - 电影不再输出 episodes[]（旧版电影被 App 渲染成「第1季/Episode 1」剧集 UI；官方 ddys/bangumi 契约：仅 tv 带分集）
+// - fetchHTML 兼容站点偶发的 JSON 字符串包裹页（content-type: application/json 的 CF 缓存变体）
+// - 标题类型判定改取末段下划线（片名含下划线时不再误判）
+//
 // v1.1.0 变更（实证回放后修复）：
 // - 详情简介/类型/主演改用结构化抽取（旧 metaField 120 字符上限 + 关键词误命中导致恒空）
 // - 详情新增站方评分 rating、更新状态拼入 subtitle、海报优先 detail-pic
@@ -202,6 +207,15 @@ async function fetchHTML(ctx, path, options) {
   if (!text) {
     throw ExtensionError({ code: "unavailable", message: "奈飞工厂返回了空页面。", retryable: true });
   }
+  // 站点偶发把整页 HTML 当 JSON 字符串返回（content-type: application/json，CF 缓存变体，实证 /voddetail/153847）。
+  // 运行时若已按 JSON 解析则 data 直接是 HTML 字符串；若给原始文本则这里解包。两种形态都兼容。
+  var trimmedText = trim(text);
+  if (trimmedText.charAt(0) === "\"" && trimmedText.charAt(trimmedText.length - 1) === "\"") {
+    try {
+      var unwrapped = JSON.parse(trimmedText);
+      if (typeof unwrapped === "string" && unwrapped.indexOf("<") >= 0) text = unwrapped;
+    } catch (error) { /* 不是合法 JSON 字符串就按原文处理 */ }
+  }
   return text;
 }// ========== 卡片解析（首页 / 搜索共用） ==========
 
@@ -363,9 +377,17 @@ function parseDetail(html, ref) {
   var kind = "";
   var tm = /<title>([^<]*)<\/title>/.exec(html);
   if (tm) {
-    var tparts = decodeEntities(tm[1]).split("_");
-    title = trim(tparts[0]);
-    if (tparts.length > 1) kind = trim(tparts[1].replace(/\s*-\s*奈飞工厂.*$/, ""));
+    var fullTitle = decodeEntities(tm[1]);
+    // 标题格式「片名_类型 - 奈飞工厂…」；片名本身可能含下划线，取最后一个下划线到站点名之间的段作类型。
+    var km = fullTitle.match(/_([^_]*?)\s*-\s*奈飞工厂/);
+    if (km) {
+      kind = trim(km[1]);
+      title = trim(fullTitle.slice(0, fullTitle.indexOf(km[0])));
+    } else {
+      var tparts = fullTitle.split("_");
+      title = trim(tparts[0]);
+      if (tparts.length > 1) kind = trim(tparts[1].replace(/\s*-\s*奈飞工厂.*$/, ""));
+    }
   }
   if (!title) title = drawerField(html, "片名") || ("影片 " + vodId);
 
@@ -464,7 +486,10 @@ function parseDetail(html, ref) {
     });
   });
   episodes.sort(function (a, b) { return a.season - b.season || a.episode - b.episode; });
-  if (episodes.length) detail.episodes = episodes;
+  // 官方样例契约（ddys/bangumi 实证）：只有 tv 才输出 episodes[]。
+  // 电影带 episodes 会被 App 渲染成「第1季 / Episode 1」剧集 UI（用户真机实证 154952）。
+  // 电影不输出分集，播放按钮直接走 playback.sources（detail ref 默认 sid1/nid1 枚举全部线路）。
+  if (episodes.length && mediaType === "tv") detail.episodes = episodes;
   return detail;
 }// ========== 播放页解析与线路 ==========
 
@@ -1016,7 +1041,7 @@ definePackage({
   author: "sixian",
   site: "https://www.netflixgc.com",
   icon: "https://www.netflixgc.com/upload/site/20241029-1/708c271d0bbf43725b96fad94d0c1eb4.png",
-  version: "1.1.0",
+  version: "1.1.1",
   engine: 1,
   permissions: {
     network: [
