@@ -14,7 +14,7 @@
  *  - token 只在内存里缓存（context 级）；ctx.storage 仅在 detail/playback 使用。
  *  - 设备号由固定种子派生 ⇒ 同一份包在同一 App 内是同一个匿名设备账号。
  */
-var VERSION = "2.4.0";
+var VERSION = "2.5.0";
 /* 包图标：SF Symbol（原来的图标 png 挂在中转 Worker 上，已随直连改造下线） */
 var ICON = "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png";
 
@@ -2290,16 +2290,36 @@ definePackage({
       tabs: async function (ctx, input) {
         var ref = (input && input.ref) || {};
         var id = str(ref.id);
-        if (id.indexOf("list:rank:") !== 0 && id.indexOf("list:cat:") !== 0) return null;
-        var tabs = RANKS.concat(NEW).map(function (r) {
-          return { id: r.id, title: r.name };
-        });
-        tabs.push({ id: "mix", title: "热门混榜" });
-        var current = id.indexOf("list:cat:") === 0
-          ? CAT_ROUTE[id.slice("list:cat:".length)]
-          : id.slice("list:rank:".length);
-        var valid = current === "mix" || !!RANK_IDS[current];
-        return { tabs: tabs, default: valid ? current : tabs[0].id };
+        if (id.indexOf("list:rank:") === 0 || id.indexOf("list:cat:") === 0) {
+          var tabs = RANKS.concat(NEW).map(function (r) {
+            return { id: r.id, title: r.name };
+          });
+          tabs.push({ id: "mix", title: "热门混榜" });
+          var current = id.indexOf("list:cat:") === 0
+            ? CAT_ROUTE[id.slice("list:cat:".length)]
+            : id.slice("list:rank:".length);
+          var valid = current === "mix" || !!RANK_IDS[current];
+          return { tabs: tabs, default: valid ? current : tabs[0].id };
+        }
+        /* 片库入口：当前大类的「全部 + 各子类」分段，主入口可切同级别分类（奈飞工厂模式）。
+           tab.id 编码为 "tid:sub"；list:all 给全部大类根分段。tabs 不联网，来自静态 LIBRARY_TYPES。 */
+        if (id === "list:all") {
+          var allTabs = [{ id: "0:0", title: "全部" }].concat(LIBRARY_TYPES.map(function (t) {
+            return { id: t.id + ":0", title: t.name };
+          }));
+          return { tabs: allTabs, default: "0:0" };
+        }
+        var spec = librarySpec(id);
+        if (spec) {
+          var t = libraryType(spec.tid);
+          var libTabs = [{ id: spec.tid + ":0", title: "全部" + t.name }].concat(asArray(t.subs).map(function (s) {
+            return { id: spec.tid + ":" + s.id, title: s.name };
+          }));
+          var cur = spec.tid + ":" + spec.sub;
+          var ok = libTabs.some(function (x) { return x.id === cur; });
+          return { tabs: libTabs, default: ok ? cur : libTabs[0].id };
+        }
+        return null;
       },
       load: async function (ctx, input) {
         var ref = (input && input.ref) || {};
@@ -2316,6 +2336,17 @@ definePackage({
           if (tab === "mix" || RANK_IDS[tab]) {
             id = "list:rank:" + tab;
             wanted = tab;
+          }
+        }
+        /* 片库/全部入口的 tab 分段：tab.id="tid:sub"，合法才覆盖；非法/无 tab 保持原 ref 行为。 */
+        if (input && input.tab !== undefined && input.tab !== null && input.tab !== ""
+            && (id === "list:all" || id.indexOf("list:library:") === 0)) {
+          var ltab = str(input.tab);
+          var lm = /^(\d+):(\d+)$/.exec(ltab);
+          if (lm && (lm[1] === "0" || libraryType(lm[1])) && librarySpec("list:library:" + lm[1] + ":" + lm[2])) {
+            id = lm[1] === "0" ? "list:all" : "list:library:" + lm[1] + ":" + lm[2];
+          } else if (lm && lm[1] === "0" && lm[2] === "0") {
+            id = "list:all";
           }
         }
         if (id === "list:all") return loadAllLibrary(ctx, input);

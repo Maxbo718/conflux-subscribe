@@ -258,7 +258,7 @@ async function playUrlByPage(ctx, videoId, epNum, expectedSeconds, pageUrl) {
 
 var DEFAULT_API_BASE = "https://huangguoai.com";
 var DEFAULT_COVER_PROXY = "https://hgpic.113210833.xyz/";
-var VERSION = "3.5.0";
+var VERSION = "3.6.0";
 
 // base64url 编码（纯 JS，避免依赖 btoa 的可用性）
 function b64u(str) {
@@ -972,14 +972,18 @@ definePackage({
       // tabs 只重选现有分类/榜单参数；无 tab 的 load 保持原 ref 行为。
       tabs: async function (ctx, input) {
         var id = input && input.ref && input.ref.id;
+        /* 浏览主入口（全库最新 + AI 分类）统一分段：全部最新 / AI短剧 / AI漫剧。
+           与奈飞工厂模式一致，主入口可直接切同级分类；tabs 不联网，来自包内静态表。 */
+        var BROWSE_TABS = [
+          { id: "all", title: "全部最新" },
+          { id: "ai-duanju", title: "AI短剧" },
+          { id: "ai-manju", title: "AI漫剧" }
+        ];
+        if (id === "list:browse" || id === "list:newest" || id === "list:latest-rail" || id === "list:debug") {
+          return { tabs: BROWSE_TABS, default: "all" };
+        }
         if (id === "list:cat:ai-duanju" || id === "list:cat:ai-manju") {
-          return {
-            tabs: [
-              { id: "ai-duanju", title: "AI短剧" },
-              { id: "ai-manju", title: "AI漫剧" }
-            ],
-            default: id.slice("list:cat:".length)
-          };
+          return { tabs: BROWSE_TABS, default: id.slice("list:cat:".length) };
         }
         if (id === "list:rank:recommend" || id === "list:rank:potential") {
           return {
@@ -1016,15 +1020,26 @@ definePackage({
           var rank = tab === "recommend" || tab === "potential" ? tab : id.slice("list:rank:".length);
           return loadNamedRank(ctx, rank);
         }
-        if (id === "list:debug" || id === "list:browse") {
-          res = await fetchVideoList(ctx, "/api/videos", { sort: "latest" }, token);
+        if (id === "list:debug" || id === "list:browse" || id === "list:newest" || id === "list:latest-rail") {
+          /* 浏览主入口接受分段 tab：all/空 => 全库最新；ai-duanju/ai-manju => 对应分类。
+             非法 tab 回退原 ref 行为（全库最新），旧 App 无 tab 不受影响。 */
+          var btab = tab === "ai-duanju" || tab === "ai-manju" ? tab : "all";
+          if (btab === "all") {
+            res = await fetchVideoList(ctx, "/api/videos", { sort: "latest" }, token);
+          } else {
+            res = await fetchVideoList(ctx, "/api/videos/category/" + encodeURIComponent(btab), { sort: "latest" }, token);
+          }
         } else if (id === "list:cat:ai-huanlian" || id === "list:cat:ai-mogai") {
           // 站方已下线这两个分类（HTTP 410「内容已下线」），组件已移除；旧 ref 直接给空列表，不打上游
           return { items: [] };
         } else if (id.indexOf("list:cat:") === 0) {
-          var selectedCat = tab === "ai-duanju" || tab === "ai-manju" ? tab : id.slice("list:cat:".length);
-          var channel = encodeURIComponent(selectedCat);
-          res = await fetchVideoList(ctx, "/api/videos/category/" + channel, { sort: "latest" }, token);
+          var selectedCat = tab === "ai-duanju" || tab === "ai-manju" ? tab : (tab === "all" ? null : id.slice("list:cat:".length));
+          if (!selectedCat) {
+            res = await fetchVideoList(ctx, "/api/videos", { sort: "latest" }, token);
+          } else {
+            var channel = encodeURIComponent(selectedCat);
+            res = await fetchVideoList(ctx, "/api/videos/category/" + channel, { sort: "latest" }, token);
+          }
         } else {
           // 默认按最新上架浏览
           res = await fetchVideoList(ctx, "/api/videos", { sort: "latest" }, token);

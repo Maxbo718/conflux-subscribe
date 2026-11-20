@@ -377,7 +377,7 @@ function htText(v){
 
 var CX_NAV=[{"label":"首页","url":"https://www.cilixiong.cc/","section":"main"},{"label":"电影","url":"https://www.cilixiong.cc/movie/","section":"main"},{"label":"剧集","url":"https://www.cilixiong.cc/drama/","section":"main"},{"label":"豆瓣电影Top250","url":"https://www.cilixiong.cc/top250/","section":"subject"},{"label":"IMDB Top250","url":"https://www.cilixiong.cc/s/imdbtop250/","section":"subject"},{"label":"高分悬疑片","url":"https://www.cilixiong.cc/s/suspense/","section":"subject"},{"label":"高分喜剧片","url":"https://www.cilixiong.cc/s/comedy/","section":"subject"},{"label":"高分传记片","url":"https://www.cilixiong.cc/s/biopic/","section":"subject"},{"label":"高分爱情片","url":"https://www.cilixiong.cc/s/romance/","section":"subject"},{"label":"高分犯罪片","url":"https://www.cilixiong.cc/s/crime/","section":"subject"},{"label":"高分恐怖片","url":"https://www.cilixiong.cc/s/horror/","section":"subject"},{"label":"高分冒险片","url":"https://www.cilixiong.cc/s/adventure/","section":"subject"},{"label":"高分武侠片","url":"https://www.cilixiong.cc/s/martial/","section":"subject"},{"label":"高分奇幻片","url":"https://www.cilixiong.cc/s/fantasy/","section":"subject"},{"label":"高分历史片","url":"https://www.cilixiong.cc/s/history/","section":"subject"},{"label":"高分战争片","url":"https://www.cilixiong.cc/s/war/","section":"subject"},{"label":"高分歌舞片","url":"https://www.cilixiong.cc/s/musical/","section":"subject"},{"label":"高分灾难片","url":"https://www.cilixiong.cc/s/disaster/","section":"subject"},{"label":"高分情色片","url":"https://www.cilixiong.cc/s/erotic/","section":"subject"},{"label":"高分西部片","url":"https://www.cilixiong.cc/s/west/","section":"subject"},{"label":"高分音乐片","url":"https://www.cilixiong.cc/s/music/","section":"subject"},{"label":"高分科幻片","url":"https://www.cilixiong.cc/s/sci-fi/","section":"subject"},{"label":"高分动作片","url":"https://www.cilixiong.cc/s/action/","section":"subject"},{"label":"高分动画片","url":"https://www.cilixiong.cc/s/animation/","section":"subject"},{"label":"高分纪录片","url":"https://www.cilixiong.cc/s/documentary/","section":"subject"},{"label":"冷门佳片","url":"https://www.cilixiong.cc/s/unpopular/","section":"subject"}];
 /* 磁力熊站方数据层。真实网页重建，不冒称恢复了已缺失 Webox 原稿。 */
-var CX_VERSION='1.0.4',CX_SITE='https://www.cilixiong.cc';
+var CX_VERSION='1.1.0',CX_SITE='https://www.cilixiong.cc';
 function htFail(code,message,retryable){throw ExtensionError({code:code,message:message,retryable:!!retryable});}
 function cxFail(code,message){htFail(code,message,code==='unavailable'||code==='rate_limited');}
 /* 完整参考resolver保持原样；本站薄层只恢复相对目录末斜杠。 */
@@ -489,7 +489,19 @@ async function cxBrowse(ctx,input,route){
 }
 async function cxList(ctx,input){
  var ref=input&&input.ref;if(!ref||ref.source!=='custom'||typeof ref.id!=='string'||ref.id.indexOf('cx:list:')!==0)return {items:[]};
- var route=ref.id.slice(8);if(!cxListUrl(route))return {items:[]};return cxBrowse(ctx,input,route);
+ var route=ref.id.slice(8);if(!cxListUrl(route))return {items:[]};
+ // tabs 分段：合法 tab 覆盖当前栏目（tab.id 即 CX_NAV url）；无 tab/非法 tab 回退原 ref，旧行为不变。
+ var tab=input&&input.tab;
+ if(tab!=null&&tab!==''&&cxListUrl(String(tab)))route=String(tab);
+ return cxBrowse(ctx,input,route);
+}
+// 主入口可切换全部 26 个栏目（3 主分类 + 23 榜单专题），与奈飞工厂分段模式一致。
+// tabs 不联网，来自包内静态 CX_NAV；default 取当前 ref 对应栏目。
+async function cxTabs(ctx,input){
+ var ref=input&&input.ref,id=ref&&ref.id;
+ if(typeof id!=='string'||id.indexOf('cx:list:')!==0)return null;
+ var route=id.slice(8);if(!cxListUrl(route))return null;
+ return {tabs:CX_NAV.map(function(n){return {id:n.url,title:n.label};}),default:route};
 }
 async function cxSearch(ctx,input){
  var q=cxClean(input&&input.query);if(!q)return {items:[]};if(q.length>200)cxFail('invalid_params','搜索词不能超过200个字符。');
@@ -557,7 +569,7 @@ async function cxDiagnostic(ctx){
  add('验收边界','这些卡片不证明已原生起播/拖动/长播，请在正常扩展里播放测试。');return {items:rows};
 }
 
-definePackage({id:"conflux.cilixiong",title:"磁力熊",version:"1.0.4",engine:1,site:"https://www.cilixiong.cc",icon:"https://www.cilixiong.cc/favicon-32x32.png",description:"磁力熊原站直连：真实电影、剧集与23榜单主题，搜索、详情、标准HLS播放。剧集仅第一集预览；无需Worker，Conflux真机待验。",permissions:{network:["https://www.cilixiong.cc"]},settings:[{name:"timeout",title:"页面请求超时秒数",type:"number",default:15,description:"5–20秒；无账号或Cookie要求。"}],extensions:[
+definePackage({id:"conflux.cilixiong",title:"磁力熊",version:"1.1.0",engine:1,site:"https://www.cilixiong.cc",icon:"https://www.cilixiong.cc/favicon-32x32.png",description:"磁力熊原站直连：真实电影、剧集与23榜单主题，搜索、详情、标准HLS播放。剧集仅第一集预览；无需Worker。1.1.0：列表新增26栏目分段切换（首页/电影/剧集+23专题），主入口可直接切其它栏目。",permissions:{network:["https://www.cilixiong.cc"]},settings:[{name:"timeout",title:"页面请求超时秒数",type:"number",default:15,description:"5–20秒；无账号或Cookie要求。"}],extensions:[
 {type:"widget",id:"home",title:"磁力熊 · 首页",template:"backdrop-rail",families:["extraLarge"],headerIntent:"list",ref:{source:"custom",id:"cx:list:https://www.cilixiong.cc/"},params:[],cache:{ttlSeconds:180},placeholderData:{items:[{ref:{source:"custom",id:"cx:detail:4768",mediaType:"movie"},title:"首页",subtitle:"站点直连，点击加载真实作品",images:{poster:"https://i.nacloud.cc/2025/06091.jpg",cover:"https://i.nacloud.cc/2025/06091.jpg"},intent:"detail"}]},load:function(ctx,input){return cxBrowse(ctx,input,"https://www.cilixiong.cc/");}},
 {type:"widget",id:"movies",title:"磁力熊 · 电影",template:"poster-pager",families:["extraLarge"],headerIntent:"list",ref:{source:"custom",id:"cx:list:https://www.cilixiong.cc/movie/"},params:[],cache:{ttlSeconds:180},placeholderData:{items:[{ref:{source:"custom",id:"cx:detail:4768",mediaType:"movie"},title:"电影",subtitle:"站点直连，点击加载真实作品",images:{poster:"https://i.nacloud.cc/2025/06091.jpg",cover:"https://i.nacloud.cc/2025/06091.jpg"},intent:"detail"}]},load:function(ctx,input){return cxBrowse(ctx,input,"https://www.cilixiong.cc/movie/");}},
 {type:"widget",id:"dramas",title:"磁力熊 · 剧集",template:"poster-ranked",families:["medium","large"],headerIntent:"list",ref:{source:"custom",id:"cx:list:https://www.cilixiong.cc/drama/"},params:[],cache:{ttlSeconds:180},placeholderData:{items:[{ref:{source:"custom",id:"cx:detail:4768",mediaType:"movie"},title:"剧集",subtitle:"站点直连，点击加载真实作品",images:{poster:"https://i.nacloud.cc/2025/06091.jpg",cover:"https://i.nacloud.cc/2025/06091.jpg"},intent:"detail"}]},load:function(ctx,input){return cxBrowse(ctx,input,"https://www.cilixiong.cc/drama/");}},
@@ -585,7 +597,7 @@ definePackage({id:"conflux.cilixiong",title:"磁力熊",version:"1.0.4",engine:1
 {type:"widget",id:"subject-documentary",title:"磁力熊 · 高分纪录片",template:"poster-grid",families:["medium","large"],headerIntent:"list",ref:{source:"custom",id:"cx:list:https://www.cilixiong.cc/s/documentary/"},params:[],cache:{ttlSeconds:180},placeholderData:{items:[{ref:{source:"custom",id:"cx:detail:4768",mediaType:"movie"},title:"高分纪录片",subtitle:"站点直连，点击加载真实作品",images:{poster:"https://i.nacloud.cc/2025/06091.jpg",cover:"https://i.nacloud.cc/2025/06091.jpg"},intent:"detail"}]},load:function(ctx,input){return cxBrowse(ctx,input,"https://www.cilixiong.cc/s/documentary/");}},
 {type:"widget",id:"subject-unpopular",title:"磁力熊 · 冷门佳片",template:"poster-grid",families:["medium","large"],headerIntent:"list",ref:{source:"custom",id:"cx:list:https://www.cilixiong.cc/s/unpopular/"},params:[],cache:{ttlSeconds:180},placeholderData:{items:[{ref:{source:"custom",id:"cx:detail:4768",mediaType:"movie"},title:"冷门佳片",subtitle:"站点直连，点击加载真实作品",images:{poster:"https://i.nacloud.cc/2025/06091.jpg",cover:"https://i.nacloud.cc/2025/06091.jpg"},intent:"detail"}]},load:function(ctx,input){return cxBrowse(ctx,input,"https://www.cilixiong.cc/s/unpopular/");}},
 {type:"search",id:"search",title:"磁力熊搜索",params:[],cache:{ttlSeconds:60},search:cxSearch},
-{type:"list",id:"list",title:"磁力熊列表",style:"grid",accepts:{sources:["custom"]},search:{id:"search"},cache:{ttlSeconds:180},load:cxList},
+{type:"list",id:"list",title:"磁力熊列表",style:"grid",accepts:{sources:["custom"]},search:{id:"search"},cache:{ttlSeconds:180},tabs:cxTabs,load:cxList},
 {type:"detail",id:"detail",title:"磁力熊详情",accepts:{sources:["custom"]},cache:{ttlSeconds:60},load:cxDetail},
 {type:"playback",id:"playback",title:"磁力熊在线播放",accepts:{sources:["custom"]},cache:{ttlSeconds:0},sources:cxPlayback}
 ]});

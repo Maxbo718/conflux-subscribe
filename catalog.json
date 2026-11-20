@@ -2,12 +2,12 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-20T20:14:23Z",
+  "updated": "2026-11-20T20:43:33Z",
   "packages": [
     {
       "id": "conflux.guazi",
       "title": "瓜子影视",
-      "version": "2.4.0",
+      "version": "2.5.0",
       "engine": 1,
       "types": [
         "widget",
@@ -19,14 +19,14 @@
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/guazi.js",
       "description": "可配置周榜 + 5 个流媒体新片榜 + 全站播放；周榜在小组件参数中选择类型。",
       "icon": "https://maxbo718.github.io/conflux-subscribe/icons/guazi.png",
-      "changelog": "2.4.0：榜单全屏列表接入官方 tabs 分段（10 周榜 + 5 流媒体榜 + 热门混榜共 16 个分段，榜单页内直接切换；默认当前榜单，非法 tab 回退原榜单）。片库/全部/搜索入口无分段；无 tab 行为与 2.3.1 一致，设备号、播放与域名逻辑未改。",
-      "md5": "f7f92d97bd2ae7e00b795ff7400c8d7c",
-      "size": 96928
+      "changelog": "2.5.0：片库40+入口与全部片库新增分类分段切换——电影/电视剧等大类内可切全部+各子类（动作/悬疑/国产/欧美…），全部片库可切12大类；榜单16分段保留；无tab/非法tab回退原行为，签名/deviceId/取流/权限未动。",
+      "md5": "8387e8a5497f6224ceec0f876c10adf3",
+      "size": 98665
     },
     {
       "id": "conflux.huangguo",
       "title": "黄果短剧",
-      "version": "3.5.0",
+      "version": "3.6.0",
       "engine": 1,
       "types": [
         "widget",
@@ -39,14 +39,14 @@
       "description": "提供黄果 AI 短剧、漫剧视频浏览、搜索、选集与全集流畅播放",
       "author": "Conflux Community",
       "icon": "https://huangguoai.com/apple-touch-icon.png",
-      "changelog": "3.5.0：全屏列表接入官方 tabs 分段——AI短剧/AI漫剧 分类互通、推荐榜/潜力榜互通（仅替换现有分类/榜单参数，无 tab 时行为与 3.4.3 完全一致）。取流三形态自适应、下线分类空列表、播放与权限均未改。",
-      "md5": "51f53d780ccdae750342c1604a4e3920",
-      "size": 48538
+      "changelog": "3.6.0：浏览主入口（全库最新/最近上新/AI短剧/AI漫剧）统一3分段切换（全部最新/AI短剧/AI漫剧），主入口可直接切同级分类；榜单2分段保留；热门/专题/精选保持原样；无tab回退原行为，取流/封面Worker/权限未动。",
+      "md5": "80a0c0e1e374ec28cd29f515a284547e",
+      "size": 49696
     },
     {
       "id": "conflux.douyin",
       "title": "抖音直播",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "engine": 1,
       "types": [
         "widget",
@@ -59,9 +59,9 @@
       "description": "抖音直播：14 分类组 + 聚合分类 + 关键词搜索。未填 Cookie 时自动降级为「已采集在播房间的关键词筛选」，填了登录 Cookie 走全站搜索。",
       "author": "Angel Live / Conflux移植",
       "icon": "https://live.douyin.com/favicon.ico",
-      "changelog": "1.6.0：全屏直播列表新增官方 tabs 分段，各分组内可直接切换分区（默认保持原分类）；无 tab 或旧版 App 行为不变。仅新增分段能力与 tab 输入兼容，不改签名、播放、搜索与聚合。",
-      "md5": "91e6ed60cd28560a2b04578c845e3a3c",
-      "size": 202849
+      "changelog": "1.7.0：全部直播主入口新增15分组分段切换（全部直播/聊天/音乐/射击/竞技…），选组即加载该组默认子类；组内子类分段保留；无tab/非法tab回退原聚合行为，房间池/签名/Cookie/取流未动。",
+      "md5": "f5cb86ed85e17f805aa05c8fdbab9f81",
+      "size": 203718
     },
     {
       "id": "conflux.heitao",
@@ -85,7 +85,7 @@
     {
       "id": "conflux.cilixiong",
       "title": "磁力熊",
-      "version": "1.0.4",
+      "version": "1.1.0",
       "engine": 1,
       "types": [
         "widget",
@@ -97,9 +97,9 @@
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/cilixiong.js",
       "description": "磁力熊原站直连：电影、剧集与23榜单主题，搜索、详情、HLS播放；剧集仅首集预览，无需Worker。",
       "icon": "https://www.cilixiong.cc/favicon-32x32.png",
-      "changelog": "1.0.4：根选择器查询处理移出节点循环；保留26个栏目、分页、搜索、详情和播放语义。1.0.3已完成真机起播反馈，1.0.4等价优化经70项独立回归、55项实网与两条健康媒体首片验证；新优化版真机性能未测。地区403不属于本次优化范围。少量历史封面外域被既有校验过滤。",
-      "md5": "091c5675e87f4e2a77dbce852d80be92",
-      "size": 48146
+      "changelog": "1.1.0：列表新增26栏目分段切换（首页/电影/剧集+23榜单专题），任一主入口可直接切其它栏目，与奈飞工厂分段模式一致；无tab/非法tab回退原栏目，搜索/详情/播放/取流不变。",
+      "md5": "323eebcf3c893f6d3f44d4f02838a595",
+      "size": 48967
     },
     {
       "id": "sixian.netflixgc",
