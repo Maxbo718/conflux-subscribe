@@ -2,7 +2,7 @@
   "format": 1,
   "title": "Minis 自建扩展源",
   "description": "黄果短剧、瓜子影视、抖音直播的 Conflux 扩展（黄果全集播放 / 瓜子榜单与全站换源 / 抖音公开直播）。添加后在扩展列表启用即可。",
-  "updated": "2026-11-22T17:11:10Z",
+  "updated": "2026-11-23T04:46:58Z",
   "packages": [
     {
       "id": "conflux.guazi",
@@ -126,9 +126,9 @@
       "description": "Destiny TV（tvfans.top）：精选推荐、热播与最新更新、38 个栏目片库、搜索、详情与在线播放。",
       "author": "Minis",
       "icon": "https://www.tvfans.top/icon-192.png",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "engine": 1,
-      "changelog": "1.2.1：看板多个组件并发加载只抓一次首页；请求网络失败自动重试一次；列表/详情/搜索加 stale-while-revalidate，切页更快。1.2.0：修电影被当成连续剧（《街头霸王2026》的多条 play 是版本，不是分集）；电影多版本改为可切换线路。",
+      "changelog": "1.2.2：纪录片不再混在「电影」栏目（站方把纪录片 typeId 32 挂在电影主类下），纪录片走「电影·纪录片」子栏目；分集类型改用站方 total/serial 判定，刚开播只上架 1 集不再被当成电影。1.2.1：看板并发去重、失败重试、stale-while-revalidate。1.2.0：修电影被当成连续剧；电影多版本改为可切换线路。",
       "types": [
         "widget",
         "search",
@@ -137,7 +137,7 @@
         "playback"
       ],
       "url": "https://maxbo718.github.io/conflux-subscribe/packages/tvfans.js",
-      "updated": "2026-11-22T17:11:10Z"
+      "updated": "2026-11-23T04:46:58Z"
     }
   ]
 }

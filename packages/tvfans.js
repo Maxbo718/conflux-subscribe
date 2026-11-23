@@ -730,10 +730,24 @@ function mediaTypeOf(vod, multiEpisode) {
   if (main === 6 || main === 11 || main === 15 || main === 34) return "tv";
   if (main === 1) {
     // 电影栏目同一条线路里的多条 play 是「版本」（英语 / HDTC中字 / HD中字），不是剧集；
-    // 只有纪录片子类（typeId 32）可能真的分集。用户实证：街头霸王2026(700) 被渲染成第1季/Episode 1-2。
-    return Number(vod && vod.typeId) === 32 && multiEpisode ? "tv" : "movie";
+    // 只有纪录片子类（typeId 32）是按集更新的节目。用户实证：街头霸王2026(700) 被渲染成第1季/Episode 1-2。
+    // 分集不能只看当前已上架集数：守护解放西·传承季(120978) total=10 但只上架 1 集，
+    // 旧逻辑会判成电影；这里改用站方声明的 total/serial，单集纪录片（total=1）仍按电影。
+    if (Number(vod && vod.typeId) === 32) {
+      var total = Number(vod && vod.total);
+      var serial = Number(vod && vod.serial);
+      if (multiEpisode || (Number.isFinite(total) && total > 1) || (Number.isFinite(serial) && serial > 1)) return "tv";
+    }
+    return "movie";
   }
   return multiEpisode ? "tv" : "movie";
+}
+
+function withoutDocs(rows) {
+  // 站点把纪录片（子类 32）挂在电影主类（1）下；「电影」栏目只留真人/动画电影，
+  // 纪录片走片库的「电影·纪录片」子栏目（tab 32）。
+  if (!Array.isArray(rows)) return rows;
+  return rows.filter(function (v) { return Number(v && v.typeId) !== 32; });
 }
 
 function cardItem(vod) {
@@ -1019,6 +1033,7 @@ async function homeWidget(ctx, kind) {
     var route = await browseRoute(ctx, path, { by: kind === "featured" ? "time" : "hits", page: "1" });
     rows = route && route.list ? route.list.list : null;
   }
+  if (kind === "cat1") rows = withoutDocs(rows); // 电影板块不混入纪录片（同片库 tab 1）
   return { items: cardItems(rows || [], 30) };
 }
 
@@ -1031,11 +1046,13 @@ async function loadBrowse(ctx, input) {
   var route = await browseRoute(ctx, path, { by: "time", page: String(page) });
   var list = route && route.list;
   if (!list || !Array.isArray(list.list)) badPage("片库列表数据无效");
+  // 「电影」主栏目（tab 1）不混入纪录片子类，纪录片有独立子栏目（tab 32）。
+  var rows = tab === "1" ? withoutDocs(list.list) : list.list;
   var returned = Number(list.page);
   if (Number.isFinite(returned) && returned !== page) {
     fail("unavailable", "网站返回的分页与请求不一致，请下拉刷新", true);
   }
-  var items = cardItems(list.list, 120);
+  var items = cardItems(rows, 120);
   var content = { items: items };
   var pages = Number(list.pageCount);
   if (items.length && Number.isFinite(pages) && page < pages && page < 5000) content.next = { page: page + 1 };
@@ -1194,7 +1211,7 @@ definePackage({
   author: "Minis",
   site: SITE,
   icon: SITE + "/icon-192.png",
-  version: "1.2.1",
+  version: "1.2.2",
   engine: 1,
   permissions: { network: [SITE] },
   settings: [
@@ -1334,7 +1351,7 @@ definePackage({
       type: "widget",
       id: "cat1",
       title: "电影",
-      description: "Destiny TV 电影栏目（动作、喜剧、科幻、恐怖、爱情、剧情、战争、纪录片、动画）。",
+      description: "Destiny TV 电影栏目（动作、喜剧、科幻、恐怖、爱情、剧情、战争、动画；纪录片见片库「电影·纪录片」）。",
       template: "poster-grid",
       families: ["medium", "large"],
       headerIntent: "list",
